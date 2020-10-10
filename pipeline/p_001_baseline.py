@@ -31,3 +31,6 @@ def transform(df: pd.DataFrame):
             df = one_hot_encoding_count(df=df,
                                         id_name=id_name,
                                         column=col)
+
+    df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
+    return df

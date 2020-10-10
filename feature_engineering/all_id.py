@@ -68,7 +68,14 @@ def one_hot_encoding_count(df: pd.DataFrame,
     df = pd.concat([df, df_dummies], axis=1)
 
     for count_col in df_dummies.columns:
-        col_name = f"{count_col}_count"
-        df[col_name] = df.groupby(id_name)[count_col].cumsum()
-
+        if "answered_correctly" in count_col or "user_answer" in count_col:
+            col_name = f"{count_col}_count_excluded_self"
+            shift1_col = f"{count_col}_shift1"
+            df[shift1_col] = df.groupby(id_name)[count_col].shift(1)
+            df[col_name] = df.groupby(id_name)[shift1_col].cumsum()
+            df = df.drop(shift1_col, axis=1)
+        else:
+            col_name = f"{count_col}_count"
+            df[col_name] = df.groupby(id_name)[count_col].shift(1).cumsum()
+    df = df.drop(df_dummies.columns, axis=1)
     return df

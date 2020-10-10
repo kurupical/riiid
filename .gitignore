@@ -1,0 +1,13 @@
+input/*
+
+\.idea/
+
+pipeline/__pycache__/
+
+feature_engineering/__pycache__/
+
+output/
+
+model/__pycache__/
+
+eda/\.ipynb_checkpoints/
