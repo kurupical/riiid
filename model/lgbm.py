@@ -2,12 +2,13 @@ import lightgbm as lgb
 from sklearn.model_selection import BaseCrossValidator
 import pandas as pd
 import numpy as np
+
 import pickle
 
-def train_lgbm(df: pd.DataFrame,
-               fold: BaseCrossValidator,
-               params: dict,
-               output_dir: str):
+def train_lgbm_kfold(df: pd.DataFrame,
+                     fold: BaseCrossValidator,
+                     params: dict,
+                     output_dir: str):
 
     y_oof = np.zeros(len(df))
 
@@ -43,3 +44,50 @@ def train_lgbm(df: pd.DataFrame,
     # feature importance
     df_imp["fold_mean"] = df_imp.drop("feature", axis=1).mean(axis=1)
     df_imp.sort_values("fold_mean", ascending=False).to_csv(f"{output_dir}/imp.csv")
+
+
+def train_lgbm_cv(df: pd.DataFrame,
+                  params: dict,
+                  output_dir: str,
+                  model_id: int):
+
+    features = [x for x in df.columns if x != "answered_correctly"]
+
+    df_imp = pd.DataFrame()
+    df_imp["feature"] = features
+
+    train_idx = []
+    val_idx = []
+    for _, w_df in df.groupby("user_id"):
+        train_num = (np.random.random(len(w_df)) < 0.8).sum()
+        train_idx.extend(w_df[:train_num].index.tolist())
+        val_idx.extend(w_df[train_num:].index.tolist())
+
+    df_train, df_val = df.loc[train_idx], df.loc[val_idx]
+    train_data = lgb.Dataset(df_train[features],
+                             label=df_train["answered_correctly"])
+    valid_data = lgb.Dataset(df_val[features],
+                             label=df_val["answered_correctly"])
+
+    model = lgb.train(
+        params,
+        train_data,
+        valid_sets=[train_data, valid_data],
+        verbose_eval=100
+    )
+    y_oof = model.predict(df_val[features])
+
+    df_imp["importance"] = model.feature_importance("gain") / model.feature_importance("gain").sum()
+    df_imp.sort_values("importance", ascending=False).to_csv(f"{output_dir}/imp_{model_id}.csv")
+    with open(f"{output_dir}/model_{model_id}.pickle", "wb") as f:
+        pickle.dump(model, f)
+
+    df_oof = pd.DataFrame()
+    df_oof["row_id"] = df_val.index
+    df_oof["predict"] = y_oof
+    df_oof["target"] = df_val["answered_correctly"]
+
+    df_oof.to_csv(f"{output_dir}/oof_{model_id}.csv", index=False)
+
+    # feature importance
+

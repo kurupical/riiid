@@ -11,3 +11,9 @@ output/
 model/__pycache__/
 
 eda/\.ipynb_checkpoints/
+
+work_csv/
+
+script/\.ipynb_checkpoints/
+
+riiideducation/
