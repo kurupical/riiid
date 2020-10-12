@@ -130,7 +130,6 @@ def run(debug,
                                         how="inner")
         env.predict(df_sample_prediction)
         df_test_prev = pd.concat(dfs)
-        print(df_test_prev)
 
 if __name__ == "__main__":
     run(debug=False,

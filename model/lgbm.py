@@ -2,8 +2,11 @@ import lightgbm as lgb
 from sklearn.model_selection import BaseCrossValidator
 import pandas as pd
 import numpy as np
+import tempfile
 
 import pickle
+import mlflow
+import os
 
 def train_lgbm_kfold(df: pd.DataFrame,
                      fold: BaseCrossValidator,
@@ -49,8 +52,18 @@ def train_lgbm_kfold(df: pd.DataFrame,
 def train_lgbm_cv(df: pd.DataFrame,
                   params: dict,
                   output_dir: str,
-                  model_id: int):
+                  model_id: int,
+                  exp_name: str):
 
+    mlflow.start_run()
+
+    mlflow.log_param("exp_name", exp_name)
+    mlflow.log_param("model_id", model_id)
+    mlflow.log_param("count_row", len(df))
+    mlflow.log_param("count_column", len(df.columns))
+
+    for key, value in params.items():
+        mlflow.log_param(key, value)
     features = [x for x in df.columns if x != "answered_correctly"]
 
     df_imp = pd.DataFrame()
@@ -58,6 +71,7 @@ def train_lgbm_cv(df: pd.DataFrame,
 
     train_idx = []
     val_idx = []
+    np.random.seed(0)
     for _, w_df in df.groupby("user_id"):
         train_num = (np.random.random(len(w_df)) < 0.8).sum()
         train_idx.extend(w_df[:train_num].index.tolist())
@@ -75,6 +89,8 @@ def train_lgbm_cv(df: pd.DataFrame,
         valid_sets=[train_data, valid_data],
         verbose_eval=100
     )
+    mlflow.log_metric("auc_train", model.best_score["training"]["auc"])
+    mlflow.log_metric("auc_val", model.best_score["valid_1"]["auc"])
     y_oof = model.predict(df_val[features])
 
     df_imp["importance"] = model.feature_importance("gain") / model.feature_importance("gain").sum()
@@ -89,5 +105,4 @@ def train_lgbm_cv(df: pd.DataFrame,
 
     df_oof.to_csv(f"{output_dir}/oof_{model_id}.csv", index=False)
 
-    # feature importance
-
+    mlflow.end_run()

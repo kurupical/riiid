@@ -19,3 +19,5 @@ script/\.ipynb_checkpoints/
 riiideducation/
 
 riiid_code/
+
+experiment/mlruns/
