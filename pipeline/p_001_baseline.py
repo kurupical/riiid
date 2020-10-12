@@ -27,7 +27,6 @@ def transform(df: pd.DataFrame):
     # ---------------
     for id_name in ["user_id"]:
         for col in ["answered_correctly", "not_answered"]:
-            print(col)
             df = one_hot_encoding_count(df=df,
                                         id_name=id_name,
                                         column=col)

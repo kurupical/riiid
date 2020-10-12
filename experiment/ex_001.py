@@ -10,7 +10,7 @@ output_dir = f"../output/ex_001/{dt.now().strftime('%Y%m%d%H%M%S')}/"
 
 for model_id, fname in enumerate(glob.glob("../input/riiid-test-answer-prediction/split10/*")):
     print(fname)
-    df = pd.read_pickle(fname).head(1000)
+    df = pd.read_pickle(fname)
     # df = pd.read_csv("../input/riiid-test-answer-prediction/train.csv", nrows=10000000)
     # df_questions = pd.read_csv("../input/riiid-test-answer-prediction/questions.csv")
     # df_lectures = pd.read_csv("../input/riiid-test-answer-prediction/lectures.csv")
@@ -37,7 +37,7 @@ for model_id, fname in enumerate(glob.glob("../input/riiid-test-answer-predictio
         'max_depth': -1,
         'learning_rate': 0.1,
         'boosting': 'gbdt',
-        'bagging_fraction': 0.5,  # 0.5,
+        'bagging_fraction': 0.7,  # 0.5,
         'feature_fraction': 0.5,
         'bagging_seed': 0,
         'reg_alpha': 0.1,  # 1.728910519108444,
@@ -49,9 +49,10 @@ for model_id, fname in enumerate(glob.glob("../input/riiid-test-answer-predictio
         "early_stopping_rounds": 100
     }
 
-    # df = df.drop(["user_answer", "task_container_id"], axis=1)
-    df = df.set_index("row_id")
+    df = df.drop(["user_answer", "row_id"], axis=1)
+
     train_lgbm_cv(df,
                   params=params,
                   output_dir=output_dir,
                   model_id=model_id)
+    break
