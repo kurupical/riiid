@@ -2,6 +2,7 @@ import pandas as pd
 from typing import List
 from logging import Logger
 import gc
+import numpy as np
 
 def agg(df: pd.DataFrame,
         id_name: str,
@@ -72,10 +73,21 @@ def one_hot_encoding_count(df: pd.DataFrame,
             col_name = f"{count_col}_count_excluded_self"
             shift1_col = f"{count_col}_shift1"
             df[shift1_col] = df.groupby(id_name)[count_col].shift(1)
-            df[col_name] = df.groupby(id_name)[shift1_col].cumsum()
+            df[col_name] = df.groupby(id_name)[shift1_col].cumsum().fillna(-1).astype("int32")
             df = df.drop(shift1_col, axis=1)
         else:
             col_name = f"{count_col}_count"
-            df[col_name] = df.groupby(id_name)[count_col].shift(1).cumsum()
+            df[col_name] = df.groupby(id_name)[count_col].cumsum().fillna(-1).astype("int32")
     df = df.drop(df_dummies.columns, axis=1)
+    return df
+
+def target_encoding(df: pd.DataFrame,
+                    cols: list):
+    def f(series):
+        return series.shift(1).cumsum() / (np.arange(len(series)) + 1)
+
+    col_name = f"target_enc_{'+'.join(cols)}"
+
+    df[col_name] = df.groupby(cols)["answered_correctly"].transform(f).astype("float32")
+
     return df

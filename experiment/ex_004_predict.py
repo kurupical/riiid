@@ -1,5 +1,5 @@
 from datetime import datetime as dt
-from pipeline.p_001_baseline import transform
+from pipeline.p_004_targetencoding import transform
 import pandas as pd
 import glob
 import os
@@ -23,8 +23,6 @@ data_types_dict = {
     'task_container_id': 'int16',
     'user_answer': 'int8',
     'answered_correctly': 'int8',
-    'prior_question_elapsed_time': 'float16',
-    'prior_question_had_explanation': 'float16'
 }
 prior_columns = ["prior_group_responses", "prior_group_answers_correct"]
 
@@ -102,6 +100,7 @@ def run(debug,
         for user_id, df_now in df_test.groupby("user_id"):
             # logger.info(f"[time: {int(time.time() - t)}dataload")
             fnames = glob.glob(f"{data_dir}/{user_id}/*.feather")
+            logger.info(f"loading...")
             if len(fnames) > 0:
                 read_dfs = [pd.read_pickle(x) for x in fnames]
                 df = pd.concat(read_dfs + [df_now]).reset_index(drop=True)
@@ -110,7 +109,9 @@ def run(debug,
                 df["user_answer"] = -1
                 df["answered_correctly"] = -1
                 df = df.astype(data_types_dict)
+            logger.info(f"transform... ")
             df = transform(df)
+            logger.info(f"other... ")
             cols = models[0].feature_name()
             for col in cols:
                 if col not in df.columns:
@@ -135,4 +136,4 @@ def run(debug,
 
 if __name__ == "__main__":
     run(debug=False,
-        model_dir="../output/ex_001/20201011201811")
+        model_dir="../output/ex_001/20201013191658")

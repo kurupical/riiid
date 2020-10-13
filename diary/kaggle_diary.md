@@ -1,8 +1,18 @@
+<div style="color: white;">
+
 # 2020/10/11
 
-## 100M行のデータを処理するのは難しい
-user_idを10で割ったあまりで、10個のデータに分ける→10個のモデルを作るってのはどうだろう?
+* 100Mのデータを処理するのは難しい
+  * user_idを10で割ったあまりで、10個のデータに分ける→10個のモデルを作るってのはどうだろう?
+  ![image](image.png)
 
-* user_id
+# 2020/10/12
+* mlflowを導入
+* target_encoding, intelligence_scoreの導入
+  * intelligence_score: 問題毎に正解率の逆数を付与(難しいほど高い)
+* とりあえずsubmissionスクリプト書いて回してみたけど…通るだろうか…
 
-![image](image.png)
+# 2020/10/13
+* pickle -> featherで試してみる
+* floatの不要な特徴は全部削除
+</div>
