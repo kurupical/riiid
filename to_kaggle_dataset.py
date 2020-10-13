@@ -6,7 +6,7 @@ if os.path.isdir("riiid_code"):
     shutil.rmtree("riiid_code")
 os.makedirs("riiid_code/pretrained")
 
-for f in glob.glob("output/ex_001/20201012115259/*"):
+for f in glob.glob("output/ex_005/20201013214747/*"):
     if "csv" in f:
         continue
     else:

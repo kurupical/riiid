@@ -15,4 +15,8 @@
 # 2020/10/13
 * pickle -> featherで試してみる
 * floatの不要な特徴は全部削除
+* target encodingとかの特徴作成に時間かかってる。loadingはfeatherにしたことで解消した。
+
+* 結局、partial_fitをすることで解消(PartialAggregator, ex005_pipeline)
+
 </div>
