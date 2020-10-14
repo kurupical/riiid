@@ -68,3 +68,5 @@ class PartialAggregator:
         df[f"count_enc_{self.key}"] = [self.data_dict["count_enc"][x] if x in self.data_dict["count_enc"] else np.nan
                                        for x in df[self.key].values]
         return df
+
+

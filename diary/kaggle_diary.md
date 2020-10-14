@@ -19,4 +19,9 @@
 
 * 結局、partial_fitをすることで解消(PartialAggregator, ex005_pipeline)
 
+# 2020/10/14
+* exp005のモデル提出 CV:0.757(10fold-mean), LB: 0.743
+* exp006: groupbyの項目を増やして試す
+  * 全面的にクラス設計を見なおした
+* exp007: 全データの1%のユーザーの行は全部validationに -> CVそんな変わらず
 </div>
