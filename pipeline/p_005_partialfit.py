@@ -4,9 +4,9 @@ from feature_engineering.partial_aggregator import PartialAggregator
 class Pipeline:
 
     def __init__(self, logger):
-        self.user_id_pa = PartialAggregator(key="user_id")
-        self.content_id_pa = PartialAggregator(key="content_id")
-        self.task_container_id = PartialAggregator(key="task_container_id")
+        self.user_id_pa = PartialAggregator(key="user_id", logger=logger)
+        self.content_id_pa = PartialAggregator(key="content_id", logger=logger)
+        self.task_container_id = PartialAggregator(key="task_container_id", logger=logger)
         self.logger = logger
 
     def _common_transform(self,
@@ -31,6 +31,7 @@ class Pipeline:
                           df: pd.DataFrame):
         df = self._common_transform(df)
         for pa in [self.user_id_pa, self.content_id_pa, self.task_container_id]:
+            self.logger.info(pa)
             df = pa.partial_predict(df)
         return df
 

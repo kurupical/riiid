@@ -33,7 +33,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
         df_expect = pd.DataFrame({"key1": ["a", "b", "b", "c", "d"],
                                   "target_enc_key1": [0, 1, 1, 1/2, np.nan]})
         df_actual = agger.partial_predict(df_test)
-        pd.testing.assert_frame_equal(df_expect, df_actual)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
         # partial fit
         df_partial = pd.DataFrame({"key1": ["a", "b", "b", "d", "d"],

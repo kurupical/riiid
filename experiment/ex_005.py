@@ -11,7 +11,7 @@ output_dir = f"../output/ex_005/{dt.now().strftime('%Y%m%d%H%M%S')}/"
 
 for model_id, fname in enumerate(glob.glob("../input/riiid-test-answer-prediction/split10/*")):
     print(fname)
-    df = pd.read_pickle(fname)
+    df = pd.read_feather(fname)
 
     pipeline = Pipeline(logger=get_logger())
     df = pipeline.fit_transform(df)
@@ -44,4 +44,4 @@ for model_id, fname in enumerate(glob.glob("../input/riiid-test-answer-predictio
                   output_dir=output_dir,
                   model_id=model_id,
                   exp_name="exp003")
-    break
+    # break

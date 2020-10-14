@@ -39,9 +39,9 @@ def run(debug,
         kaggle=False):
 
     if kaggle:
-        files_dir = "/kaggle/input/riiid-split10/*.feather"
+        files_dir = "/kaggle/input/riiid-split10/*.pickle"
     else:
-        files_dir = "../input/riiid-test-answer-prediction/split10/*.feather"
+        files_dir = "../input/riiid-test-answer-prediction/split10/*.pickle"
 
     logger = get_logger()
     # environment
@@ -54,7 +54,7 @@ def run(debug,
             models.append(pickle.load(f))
 
     # data preprocessing
-    pipeline = Pipeline()
+    pipeline = Pipeline(logger=logger)
     for model_id, fname in enumerate(glob.glob(files_dir)):
         logger.info(f"loading... {fname}")
         df = pd.read_pickle(fname)
@@ -101,9 +101,8 @@ def run(debug,
                                         df[["row_id", "answered_correctly"]],
                                         how="inner")
         env.predict(df_sample_prediction)
-        print(df_sample_prediction)
         df_test_prev = df[cols]
 
 if __name__ == "__main__":
-    run(debug=True,
-        model_dir="../output/ex_005/20201013212810")
+    run(debug=False,
+        model_dir="../output/ex_005/20201013223614")

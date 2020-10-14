@@ -54,13 +54,17 @@ class PartialAggregator:
             else:
                 count = self.data_dict["count_enc"][key]
                 target_enc = self.data_dict["target_enc"][key]
+                length = len(w_df)
 
-                self.data_dict["count_enc"][key] += len(w_df)
+                self.data_dict["count_enc"][key] = count + length
                 self.data_dict["target_enc"][key] = \
-                    (count * target_enc + w_df["answered_correctly"].sum()) / (count + len(w_df))
+                    (count * target_enc + w_df["answered_correctly"].sum()) / (count + length)
         return self
 
     def partial_predict(self,
                         df: pd.DataFrame):
-        df[f"target_enc_{self.key}"] = df[self.key].map(self.data_dict["target_enc"])
+        df[f"target_enc_{self.key}"] = [self.data_dict["target_enc"][x] if x in self.data_dict["target_enc"] else np.nan
+                                        for x in df[self.key].values]
+        df[f"count_enc_{self.key}"] = [self.data_dict["count_enc"][x] if x in self.data_dict["count_enc"] else np.nan
+                                       for x in df[self.key].values]
         return df
