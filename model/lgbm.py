@@ -54,19 +54,21 @@ def train_lgbm_cv(df: pd.DataFrame,
                   params: dict,
                   output_dir: str,
                   model_id: int,
-                  exp_name: str):
+                  exp_name: str,
+                  drop_user_id: bool):
 
-    mlflow.start_run()
+    mlflow.start_run(run_name=exp_name)
 
-    mlflow.log_param("exp_name", exp_name)
     mlflow.log_param("model_id", model_id)
     mlflow.log_param("count_row", len(df))
     mlflow.log_param("count_column", len(df.columns))
 
     for key, value in params.items():
         mlflow.log_param(key, value)
-    features = [x for x in df.columns if x != "answered_correctly"]
-
+    if drop_user_id:
+        features = [x for x in df.columns if x not in ["answered_correctly", "user_id"]]
+    else:
+        features = [x for x in df.columns if x not in ["answered_correctly"]]
     df_imp = pd.DataFrame()
     df_imp["feature"] = features
 
@@ -112,22 +114,22 @@ def train_lgbm_cv(df: pd.DataFrame,
 def train_lgbm_cv_newuser(df: pd.DataFrame,
                           params: dict,
                           output_dir: str,
-                          model_id: int,
+                          model_id: str,
                           exp_name: str,
-                          new_user_ratio: float):
+                          new_user_ratio: float,
+                          drop_user_id: bool):
 
     if new_user_ratio > 0.2:
         raise ValueError("new_user_ratio>0.2だと完全にuserでsplitされちゃう")
-    mlflow.start_run()
+    mlflow.start_run(run_name=exp_name)
 
-    mlflow.log_param("exp_name", exp_name)
     mlflow.log_param("model_id", model_id)
     mlflow.log_param("count_row", len(df))
     mlflow.log_param("count_column", len(df.columns))
 
     for key, value in params.items():
         mlflow.log_param(key, value)
-    features = [x for x in df.columns if x != "answered_correctly"]
+    features = [x for x in df.columns if x not in ["answered_correctly"]]
 
     df_imp = pd.DataFrame()
     df_imp["feature"] = features

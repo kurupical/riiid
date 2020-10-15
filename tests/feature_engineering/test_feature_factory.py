@@ -46,6 +46,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
         df_test = pd.DataFrame({"key1": ["a", "b", "b", "c", "d"]})
         df_expect = pd.DataFrame({"key1": ["a", "b", "b", "c", "d"],
                                   "target_enc_key1": [0, 1, 1, 1/2, np.nan]})
+        df_expect["target_enc_key1"] = df_expect["target_enc_key1"].astype("float32")
         df_actual = agger.partial_predict(df_test)
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
@@ -115,6 +116,79 @@ class PartialAggregatorTestCase(unittest.TestCase):
                   "d": 1/2}
 
         self.assertEqual(expect, agger.feature_factory_dict["key1"]["MeanAggregator"].data_dict)
+
+    def test_fit_countencoding_split2(self):
+        """
+        countencoding, targetencodingのテスト
+        :return:
+        """
+        df = pd.DataFrame({"key1": ["a", "b", "b", "c", "c", "c", "c"],
+                           "user_id": ["a", "b", "b", "c", "c", "c", "c"],
+                           "answered_correctly": [0, 1, 1, 0, 1, 1, 0]})
+        logger = get_logger()
+        feature_factory_dict = {
+            "key1": {
+                "CountEncoder": CountEncoder(column="key1")
+            },
+            "user_id": {
+                "CountEncoder": CountEncoder(column="user_id")
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger,
+                                      split_num=2)
+        agger.fit(df)
+
+        # partial_predict
+        df_expect = pd.DataFrame({"key1": ["a", "b", "b", "c", "c", "c", "c"],
+                                  "user_id": ["a", "b", "b", "c", "c", "c", "c"],
+                                  "count_enc_key1": [2, 4, 4, 8, 8, 8, 8],
+                                  "count_enc_user_id": [1, 2, 2, 4, 4, 4, 4]})
+        df_expect["count_enc_key1"] = df_expect["count_enc_key1"].astype("int32")
+        df_expect["count_enc_user_id"] = df_expect["count_enc_user_id"].astype("int32")
+        df_actual = agger.partial_predict(df)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+
+    def test_fit_countencoding_multiple(self):
+        """
+        countencoding, targetencodingのテスト
+        :return:
+        """
+        df = pd.DataFrame({"key1": ["a", "b", "b", "c", "c", "c", "c"],
+                           "key2": ["a", "a", "a", "a", "b", "b", "b"],
+                           "answered_correctly": [0, 1, 1, 0, 1, 1, 0]})
+        logger = get_logger()
+        feature_factory_dict = {
+            ("key1", "key2"): {
+                "CountEncoder": CountEncoder(column=["key1", "key2"]),
+                "TargetEncoder": TargetEncoder(column=["key1", "key2"])
+            },
+        }
+
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+        # all_predict
+        df_expect = pd.DataFrame({"key1": ["a", "b", "b", "c", "c", "c", "c"],
+                                  "key2": ["a", "a", "a", "a", "b", "b", "b"],
+                                  "count_enc_['key1', 'key2']": [0, 0, 1, 0, 0, 1, 2],
+                                  "target_enc_['key1', 'key2']": [np.nan, np.nan, 1, np.nan, np.nan, 1, 1]})
+        df_expect["count_enc_['key1', 'key2']"] = df_expect["count_enc_['key1', 'key2']"].astype("int32")
+        df_expect["target_enc_['key1', 'key2']"] = df_expect["target_enc_['key1', 'key2']"].astype("float32")
+        df_actual = agger.all_predict(df)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # partial_predict
+        agger.fit(df)
+
+        df_expect = pd.DataFrame({"key1": ["a", "b", "b", "c", "c", "c", "c"],
+                                  "key2": ["a", "a", "a", "a", "b", "b", "b"],
+                                  "count_enc_['key1', 'key2']": [1, 2, 2, 1, 3, 3, 3],
+                                  "target_enc_['key1', 'key2']": [0, 1, 1, 0, 2/3, 2/3, 2/3]})
+        df_expect["count_enc_['key1', 'key2']"] = df_expect["count_enc_['key1', 'key2']"].astype("int32")
+        df_expect["target_enc_['key1', 'key2']"] = df_expect["target_enc_['key1', 'key2']"].astype("float32")
+        df_actual = agger.partial_predict(df)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
 
 if __name__ == "__main__":
