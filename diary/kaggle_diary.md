@@ -24,4 +24,17 @@
 * exp006: groupbyの項目を増やして試す
   * 全面的にクラス設計を見なおした
 * exp007: 全データの1%のユーザーの行は全部validationに -> CVそんな変わらず
+
+# 2020/10/15
+* exp006の1モデル　CV:0.760 LB: 0.739
+* exp008: CV: 0.761
+  * trainはsplitだけとtestは全部マージしていることによるバグ修正
+    * user_id削除
+    * countencodingはuser_id以外は10倍にする
+  * 項目増やす
+* exp009 => CV:0.751
+  * question, lectureの追加
+  * answered_correctly=-1(lecture)も訓練してたバグ修正
+* exp010 => parameter tuning. iteration少ない方が良さそう
+  * lr=0.3にしてあといろいろ
 </div>

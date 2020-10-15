@@ -7,8 +7,8 @@ class FeatureFactory:
     feature_name_base = ""
     def __init__(self,
                  column: Union[list, str],
-                 split_num: int=1,
-                 logger: Logger=None):
+                 split_num: int = 1,
+                 logger: Union[Logger, None] = None):
         self.column = column
         self.logger = logger
         self.split_num = split_num
@@ -42,6 +42,7 @@ class FeatureFactory:
                         df: pd.DataFrame):
         raise NotImplementedError
 
+
 class CountEncoder(FeatureFactory):
     feature_name_base = "count_enc"
 
@@ -70,6 +71,7 @@ class CountEncoder(FeatureFactory):
         if "user_id" not in self.make_col_name:
             df[self.make_col_name] *= self.split_num
         return df
+
 
 class TargetEncoder(FeatureFactory):
     feature_name_base = "target_enc"
@@ -111,6 +113,7 @@ class TargetEncoder(FeatureFactory):
         df[self.make_col_name] = df[self.make_col_name].astype("float32")
         return df
 
+
 class MeanAggregator(FeatureFactory):
     feature_name_base = "mean"
 
@@ -118,8 +121,8 @@ class MeanAggregator(FeatureFactory):
                  column: str,
                  agg_column: str,
                  remove_now: bool,
-                 logger: Logger=None):
-        super().__init__(column, logger)
+                 logger: Union[Logger, None] =None):
+        super().__init__(column=column, logger=logger)
         self.agg_column = agg_column
         self.remove_now = remove_now
         self.make_col_name = f"{self.feature_name_base}_{self.agg_column}_by_{self.column}"
@@ -159,6 +162,7 @@ class MeanAggregator(FeatureFactory):
         df[self.make_col_name] = df[self.make_col_name].astype("float32")
         df[f"diff_{self.make_col_name}"] = (df[self.agg_column] - df[self.make_col_name]).astype("float32")
         return df
+
 
 class FeatureFactoryManager:
     def __init__(self,
