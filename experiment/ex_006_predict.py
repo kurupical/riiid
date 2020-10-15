@@ -130,6 +130,8 @@ def run(debug,
         env.predict(df_sample_prediction)
         df_test_prev = df[cols]
 
+        df_test_prev.to_csv(f"{i}.csv")
+
 if __name__ == "__main__":
     run(debug=False,
-        model_dir="../output/ex_006/20201014225008")
+        model_dir="../output/ex_006/20201015091550")

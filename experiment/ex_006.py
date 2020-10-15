@@ -13,7 +13,7 @@ import glob
 
 output_dir = f"../output/ex_006/{dt.now().strftime('%Y%m%d%H%M%S')}/"
 
-for model_id, fname in enumerate(glob.glob("../input/riiid-test-answer-prediction/split10/*")):
+for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
     print(fname)
     df = pd.read_pickle(fname)
     df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
@@ -60,8 +60,10 @@ for model_id, fname in enumerate(glob.glob("../input/riiid-test-answer-predictio
     df = df.drop(["user_answer"], axis=1)
     print(df.columns)
 
+    model_id = os.path.basename(fname).replace(".pickle", "")
+    print(model_id)
     train_lgbm_cv(df,
                   params=params,
                   output_dir=output_dir,
                   model_id=model_id,
-                  exp_name="exp006")
+                  exp_name=f"exp006_{model_id}")
