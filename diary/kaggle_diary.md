@@ -41,5 +41,17 @@
 # 2020/10/16
 * exp009のpredict改良、fitは毎回やらない(10000件ごとに実施)
 * exp011: 10model lr=0.3 => CV:0.754 LB:0.747
-* exp012: 1model/50Mbyte data
+* exp012: 1model/50Mrow data
+  * 固まって動かない。30Mrowでもダメ…辛い…
+* exp013: tags1~tags6の特徴追加
+  * tags1~tags6はあんまり効果なさそう
+  * 20M行にして夜放置してみる
+
+# 2020/10/17
+* exp013: CV: 0.756(10modelと比べて+0.005)
+* EDA
+  * tags
+  * user_id
+
+
 </div>

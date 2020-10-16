@@ -22,6 +22,15 @@ class FeatureFactory:
                                        Dict[str, object]]):
         raise NotImplementedError
 
+    def make_feature(self,
+                     df: pd.DataFrame):
+        """
+        単純な特徴の追加
+        :param df:
+        :return:
+        """
+        return df
+
     def all_predict(self,
                     df: pd.DataFrame):
         raise NotImplementedError
@@ -126,6 +135,47 @@ class TargetEncoder(FeatureFactory):
         return df
 
 
+class TagsSeparator(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 logger: Union[Logger, None] = None):
+        self.logger = logger
+
+    def fit(self,
+            df: pd.DataFrame,
+            key: str,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return self._predict(df)
+
+    def _predict(self,
+                 df: pd.DataFrame):
+        tag = df["tags"].str.split(" ", n=10, expand=True)
+        tag.columns = [f"tags{i}" for i in range(1, len(tag.columns) + 1)]
+
+        for col in ["tags1", "tags2", "tags3", "tags4", "tags5", "tags6"]:
+            if col in tag.columns:
+                df[col] = pd.to_numeric(tag[col], errors='coerce').fillna(-1).astype("int16")
+            else:
+                df[col] = -1
+                df[col].astype("int16")
+        return df
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"tags_all")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        return self._predict(df)
+
 class MeanAggregator(FeatureFactory):
     feature_name_base = "mean"
 
@@ -223,6 +273,8 @@ class FeatureFactoryManager:
                     factory.fit(df=w_df,
                                 key=key,
                                 feature_factory_dict=self.feature_factory_dict)
+            for factory in dicts.values():
+                df = factory.make_feature(df)
 
     def fit_predict(self,
                     df: pd.DataFrame):
