@@ -50,8 +50,9 @@
 # 2020/10/17
 * exp013: CV: 0.756(10modelと比べて+0.005)
 * EDA
-  * tags
+  * tags 003_tags_vs_targetencoder
+    * ![image_1](image_1.png)
+    * まあ、tags1~6のcountencodingで十分カバーできてるかなぁ…
   * user_id
-
 
 </div>
