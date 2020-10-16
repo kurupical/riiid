@@ -37,4 +37,9 @@
   * answered_correctly=-1(lecture)も訓練してたバグ修正
 * exp010 => parameter tuning. iteration少ない方が良さそう
   * lr=0.3にしてあといろいろ
+
+# 2020/10/16
+* exp009のpredict改良、fitは毎回やらない(10000件ごとに実施)
+* exp011: 10model lr=0.3 => CV:0.754 LB:0.747
+* exp012: 1model/50Mbyte data
 </div>

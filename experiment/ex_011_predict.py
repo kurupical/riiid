@@ -18,7 +18,7 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/ex_009/20201015191314"
+model_dir = "../output/ex_011/20201016131524"
 
 data_types_dict = {
     'row_id': 'int64',

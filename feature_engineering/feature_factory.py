@@ -42,6 +42,8 @@ class FeatureFactory:
                         df: pd.DataFrame):
         raise NotImplementedError
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}(key=f{self.column}"
 
 class CountEncoder(FeatureFactory):
     feature_name_base = "count_enc"
@@ -93,8 +95,18 @@ class TargetEncoder(FeatureFactory):
             else:
                 raise ValueError
             target_enc = self.data_dict[key]
+
+            # パフォーマンス対策:
+            # df["foo"] 1ms
+            # df.values[(fooの場所)] 70us
+            ans_sum = df["answered_correctly"].values
+            if len(df) == 1:
+                ans_sum = ans_sum[0]
+            else:
+                ans_sum = ans_sum.sum()
+
             self.data_dict[key] = \
-                ((count - len(df)) * target_enc + df["answered_correctly"].sum()) / count
+                ((count - len(df)) * target_enc + ans_sum) / count
         return self
 
     def all_predict(self,
@@ -140,7 +152,7 @@ class MeanAggregator(FeatureFactory):
             count = feature_factory_dict[self.column]["CountEncoder"].data_dict[key]
             target_enc = self.data_dict[key]
             self.data_dict[key] = \
-                ((count - len(df)) * target_enc + df[self.agg_column].sum()) / count
+                ((count - len(df)) * target_enc + df[self.agg_column].values.sum()) / count
         return self
 
     def all_predict(self,
@@ -180,7 +192,7 @@ class FeatureFactoryManager:
             }
         """
         self.feature_factory_dict = feature_factory_dict
-        self.logger = Logger
+        self.logger = logger
         self.split_num = split_num
         """
         for column in feature_factory_dict.keys():
@@ -203,6 +215,8 @@ class FeatureFactoryManager:
                 group = df.groupby(column)
             else:
                 raise ValueError
+            import time
+            t = time.time()
             for key, w_df in group:
                 # カラムのキー(ex. user_id=20000)ごとに処理
                 for factory in dicts.values():

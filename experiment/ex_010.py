@@ -11,11 +11,11 @@ from datetime import datetime as dt
 import numpy as np
 import os
 import glob
+import random
 
 output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
 
 for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
-    print(fname)
     df = pd.read_pickle(fname)
     # df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)])
     df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
@@ -48,35 +48,35 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
                                                     split_num=10)
     df = feature_factory_manager.all_predict(df)
     os.makedirs(output_dir, exist_ok=True)
-    params = {
-        'objective': 'binary',
-        'num_leaves': 32,
-        'min_data_in_leaf': 15,  # 42,
-        'max_depth': -1,
-        'learning_rate': 0.3,
-        'boosting': 'gbdt',
-        'bagging_fraction': 0.7,  # 0.5,
-        'feature_fraction': 0.5,
-        'bagging_seed': 0,
-        'reg_alpha': 0.1,  # 1.728910519108444,
-        'reg_lambda': 1,
-        'random_state': 0,
-        'metric': 'auc',
-        'verbosity': -1,
-        "n_estimators": 10000,
-        "early_stopping_rounds": 100
-    }
-
     df = df.drop(["user_answer", "tags", "type_of"], axis=1)
     df = df[df["answered_correctly"].notnull()]
-    print(df.columns)
-    print(df.shape)
 
-    model_id = os.path.basename(fname).replace(".pickle", "")
-    print(model_id)
-    train_lgbm_cv(df,
-                  params=params,
-                  output_dir=output_dir,
-                  model_id=model_id,
-                  exp_name=model_id,
-                  drop_user_id=True)
+    for _ in range(100):
+        params = {
+            'objective': 'binary',
+            'num_leaves': random.choice([8, 16, 32]),
+            'max_depth': -1,
+            'learning_rate': 0.1,
+            'boosting': random.choice(['gbdt', 'gbdt', 'gbdt', 'goss']),
+            'bagging_fraction': random.choice([0.1, 0.5, 0.7, 0.9]),
+            'feature_fraction': random.choice([0.1, 0.3, 0.5, 0.7, 0.9]),
+            'bagging_seed': 0,
+            'reg_alpha': random.choice([0, 0.1, 1, 5]),
+            'reg_lambda': random.choice([0, 0.1, 1, 5]),
+            'random_state': 0,
+            'metric': 'auc',
+            'verbosity': -1,
+            "n_estimators": 10000,
+            "early_stopping_rounds": 100
+        }
+
+        model_id = os.path.basename(fname).replace(".pickle", "")
+        train_lgbm_cv(df,
+                      params=params,
+                      output_dir=output_dir,
+                      model_id=model_id,
+                      experiment_id=2,
+                      exp_name=model_id,
+                      drop_user_id=True)
+        del params
+    break

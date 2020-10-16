@@ -55,9 +55,10 @@ def train_lgbm_cv(df: pd.DataFrame,
                   output_dir: str,
                   model_id: int,
                   exp_name: str,
-                  drop_user_id: bool):
+                  drop_user_id: bool,
+                  experiment_id: int=0):
 
-    mlflow.start_run(run_name=exp_name)
+    mlflow.start_run(experiment_id=experiment_id, run_name=exp_name)
 
     mlflow.log_param("model_id", model_id)
     mlflow.log_param("count_row", len(df))
@@ -80,11 +81,12 @@ def train_lgbm_cv(df: pd.DataFrame,
         train_idx.extend(w_df[:train_num].index.tolist())
         val_idx.extend(w_df[train_num:].index.tolist())
 
-    df_train, df_val = df.loc[train_idx], df.loc[val_idx]
-    train_data = lgb.Dataset(df_train[features],
-                             label=df_train["answered_correctly"])
-    valid_data = lgb.Dataset(df_val[features],
-                             label=df_val["answered_correctly"])
+    print("make_train_data")
+    train_data = lgb.Dataset(df.loc[train_idx][features],
+                             label=df.loc[train_idx]["answered_correctly"])
+    print("make_test_data")
+    valid_data = lgb.Dataset(df.loc[val_idx][features],
+                             label=df.loc[val_idx]["answered_correctly"])
 
     model = lgb.train(
         params,
@@ -94,7 +96,7 @@ def train_lgbm_cv(df: pd.DataFrame,
     )
     mlflow.log_metric("auc_train", model.best_score["training"]["auc"])
     mlflow.log_metric("auc_val", model.best_score["valid_1"]["auc"])
-    y_oof = model.predict(df_val[features])
+    y_oof = model.predict(df.loc[val_idx][features])
 
     df_imp["importance"] = model.feature_importance("gain") / model.feature_importance("gain").sum()
     df_imp.sort_values("importance", ascending=False).to_csv(f"{output_dir}/imp_{model_id}.csv")
@@ -102,9 +104,9 @@ def train_lgbm_cv(df: pd.DataFrame,
         pickle.dump(model, f)
 
     df_oof = pd.DataFrame()
-    df_oof["row_id"] = df_val.index
+    df_oof["row_id"] = df.loc[val_idx].index
     df_oof["predict"] = y_oof
-    df_oof["target"] = df_val["answered_correctly"]
+    df_oof["target"] = df.loc[val_idx]["answered_correctly"]
 
     df_oof.to_csv(f"{output_dir}/oof_{model_id}.csv", index=False)
 
