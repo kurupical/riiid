@@ -6,7 +6,8 @@ from feature_engineering.feature_factory import \
     FeatureFactoryManager, \
     CountEncoder, \
     TargetEncoder, \
-    MeanAggregator
+    MeanAggregator, \
+    UserLevelEncoder
 from experiment.common import get_logger
 
 class PartialAggregatorTestCase(unittest.TestCase):
@@ -210,7 +211,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
                                       logger=logger)
         # predict_all
         df_expect = pd.DataFrame({"key1": ["a", "b", "b", "c", "c", "c", "c"],
-                                  "target_enc_key1": [np.nan, np.nan, 6/11, np.nan, 5/11, 6/12, 7/13]})
+                                  "target_enc_key1": [0.5, 0.5, 6/11, 0.5, 5/11, 6/12, 7/13]})
         df_expect["target_enc_key1"] = df_expect["target_enc_key1"].astype("float32")
         df_actual = agger.all_predict(df)
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
@@ -227,7 +228,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
         # partial predict
         df_test = pd.DataFrame({"key1": ["a", "b", "b", "c", "d"]})
         df_expect = pd.DataFrame({"key1": ["a", "b", "b", "c", "d"],
-                                  "target_enc_key1": [5/11, 7/12, 7/12, 7/14, np.nan]})
+                                  "target_enc_key1": [5/11, 7/12, 7/12, 7/14, 0.5]})
         df_expect["target_enc_key1"] = df_expect["target_enc_key1"].astype("float32")
         df_actual = agger.partial_predict(df_test)
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
@@ -243,6 +244,98 @@ class PartialAggregatorTestCase(unittest.TestCase):
                   "d": 1/2}
 
         self.assertEqual(expect, agger.feature_factory_dict["key1"]["TargetEncoder"].data_dict)
+
+
+    def test_fit_user_level(self):
+        """
+        user_level
+        :return:
+        """
+        logger = get_logger()
+        feature_factory_dict = {
+            "content_id": {
+                "CountEncoder": CountEncoder(column="content_id"),
+                "TargetEncoder": TargetEncoder(column="content_id",
+                                               initial_weight=10,
+                                               initial_score=0.5)},
+            "user_id": {
+                "CountEncoder": CountEncoder(column="user_id"),
+                "TargetEncoder": TargetEncoder(column="user_id",
+                                               initial_weight=10,
+                                               initial_score=0.5),
+                "UserLevelEncoder": UserLevelEncoder(initial_weight=10,
+                                                     initial_score=0.5)}
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        df = pd.DataFrame({"user_id": ["a", "b", "b", "c", "c"],
+                           "content_id": ["x", "x", "x", "y", "y"],
+                           "answered_correctly": [0, 0, 1, 0, 1]})
+
+        # predict_all
+        # <default> target_enc_content_id mean([0.5] * 10) = 0.5 なので, user_levelは0.5
+        # user_id=a, content_id=x, answered_correctly=1が入ると
+        # xのtarget_enc_content_id = mean([0.5] * 10 + [1]) = 6/11.
+        # aのuser_level = mean([0.5]*10 + 6/11) に更新される
+
+        df_expect = pd.DataFrame({"user_id": ["a", "b", "b", "c", "c"],
+                                  "content_id": ["x", "x", "x", "y", "y"],
+                                  "user_level": [0.5,
+                                                 np.array([0.5]*10 + [5/11]).astype("float32").mean(),
+                                                 np.array([0.5]*10 + [5/11] + [5/12]).astype("float32").mean(),
+                                                 0.5,
+                                                 np.array([0.5]*10 + [5/10] + [5/11]).astype("float32").mean()]})
+        df_expect["user_level"] = df_expect["user_level"].astype("float32")
+        df_actual = agger.all_predict(df)
+        pd.set_option("max_columns", 100)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # fit
+        df = pd.DataFrame({"user_id": ["a", "b", "b", "c", "c"],
+                           "content_id": ["x", "x", "x", "y", "y"],
+                           "answered_correctly": [0, 0, 1, 0, 1]})
+
+        agger.fit(df)
+        a = np.array([0.5]*10 + [6/13]).mean()
+        b = np.array([0.5]*10 + [6/13] + [6/13]).mean()
+        c = np.array([0.5]*10 + [6/12] + [6/12]).mean()
+        expect = {"a": a,
+                  "b": b,
+                  "c": c}
+        actual = agger.feature_factory_dict["user_id"]["UserLevelEncoder"].data_dict
+
+        for k, v in expect.items():
+            expect[k] = np.float32(np.round(v, 5))
+        for k, v in actual.items():
+            actual[k] = np.float32(np.round(v, 5))
+        self.assertEqual(expect, actual)
+
+        # partial predict
+        df_test = pd.DataFrame({"user_id": ["a", "b", "d"],
+                                "content_id": ["x", "y", "z"]})
+        df_expect = pd.DataFrame({"user_id": ["a", "b", "d"],
+                                  "user_level": [a, b, 0.5]})
+        df_expect["user_level"] = df_expect["user_level"].astype("float32")
+        df_actual = agger.partial_predict(df_test)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # partial fit
+        df_partial = pd.DataFrame({"user_id": ["a", "d"],
+                                   "content_id": ["x", "z"],
+                                   "answered_correctly": [0, 0]})
+
+        agger.fit(df_partial)
+        expect = {"a": np.array([0.5]*10 + [6/13] + [6/14]).mean(),
+                  "b": b,
+                  "c": c,
+                  "d": np.array([0.5]*10 + [5/11]).mean()}
+        for k, v in expect.items():
+            expect[k] = np.float32(np.round(v, 5))
+        for k, v in actual.items():
+            actual[k] = np.float32(np.round(v, 5))
+
+        self.assertEqual(expect, agger.feature_factory_dict["user_id"]["UserLevelEncoder"].data_dict)
 
 
 if __name__ == "__main__":
