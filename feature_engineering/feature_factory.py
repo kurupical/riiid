@@ -134,7 +134,7 @@ class TargetEncoder(FeatureFactory):
     def all_predict(self,
                     df: pd.DataFrame):
         def f(series):
-            return (series.shift(1).cumsum() + self.initial_weight * self.initial_score) / (np.arange(len(series)) + self.initial_weight)
+            return (series.shift(1).cumsum().fillna(0) + self.initial_weight * self.initial_score) / (np.arange(len(series)) + self.initial_weight)
 
         self.logger.info(f"target_encoding_all_{self.column}")
 
@@ -145,6 +145,8 @@ class TargetEncoder(FeatureFactory):
                         df: pd.DataFrame):
         df = self._partial_predict(df)
         df[self.make_col_name] = df[self.make_col_name].astype("float32")
+        if self.initial_weight > 0:
+            df[self.make_col_name] = df[self.make_col_name].fillna(self.initial_score)
         return df
 
 
@@ -239,6 +241,61 @@ class MeanAggregator(FeatureFactory):
         return df
 
 
+
+class UserLevelEncoder(FeatureFactory):
+    feature_name_base = "user_level"
+    def __init__(self,
+                 initial_score: float =.0,
+                 initial_weight: float = 0,
+                 logger: Union[Logger, None] = None):
+        self.column = "user_id"
+        self.initial_score = initial_score
+        self.initial_weight = initial_weight
+        self.logger = logger
+        self.data_dict = {}
+        self.make_col_name = f"{self.feature_name_base}"
+
+    def fit(self,
+            df: pd.DataFrame,
+            key: str,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        initial_bunshi = self.initial_score * self.initial_weight
+        if key not in self.data_dict:
+            self.data_dict[key] = (df["target_enc_content_id"].sum() + initial_bunshi) / (len(df) + self.initial_weight)
+        else:
+            # count_encoderの値は更新済のため、
+            # count = 4, len(df) = 1の場合、もともと3件あって1件が足されたとかんがえる
+            target_enc = self.data_dict[key]
+            count = feature_factory_dict["user_id"]["CountEncoder"].data_dict[key] + self.initial_weight
+
+            # パフォーマンス対策:
+            # df["answered_correctly"].sum()
+            ans_sum = df["target_enc_content_id"].values
+            if len(df) == 1:
+                ans_sum = ans_sum[0]
+            else:
+                ans_sum = ans_sum.sum()
+            self.data_dict[key] = ((count - len(df)) * target_enc + ans_sum) / count
+        return self
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        def f(series):
+            return (series.cumsum() + self.initial_weight * self.initial_score) / (np.arange(len(series)) + 1 + self.initial_weight)
+
+        df["user_level"] = df.groupby("user_id")["target_enc_content_id"].transform(f).astype("float32")
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        df = self._partial_predict(df)
+        df[self.make_col_name] = df[self.make_col_name].astype("float32")
+        if self.initial_weight > 0:
+            df[self.make_col_name] = df[self.make_col_name].fillna(self.initial_score)
+        return df
+
+
 class FeatureFactoryManager:
     def __init__(self,
                  feature_factory_dict: Dict[Union[str, tuple],
@@ -288,6 +345,8 @@ class FeatureFactoryManager:
                                 feature_factory_dict=self.feature_factory_dict)
             for factory in dicts.values():
                 df = factory.make_feature(df)
+            for factory in dicts.values():
+                df = factory.partial_predict(df)
 
     def fit_predict(self,
                     df: pd.DataFrame):
@@ -318,3 +377,4 @@ class FeatureFactoryManager:
             for factory in dicts.values():
                 df = factory.partial_predict(df)
         return df
+
