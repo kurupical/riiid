@@ -191,5 +191,59 @@ class PartialAggregatorTestCase(unittest.TestCase):
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
 
+    def test_fit_targetencoding_with_initialweight(self):
+        """
+        countencoding, targetencodingのテスト(initial_weight)
+        :return:
+        """
+        df = pd.DataFrame({"key1": ["a", "b", "b", "c", "c", "c", "c"],
+                           "answered_correctly": [0, 1, 1, 0, 1, 1, 0]})
+        logger = get_logger()
+        feature_factory_dict = {
+            "key1": {
+                "CountEncoder": CountEncoder(column="key1"),
+                "TargetEncoder": TargetEncoder(column="key1",
+                                               initial_weight=10,
+                                               initial_score=0.5)}
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+        # predict_all
+        df_expect = pd.DataFrame({"key1": ["a", "b", "b", "c", "c", "c", "c"],
+                                  "target_enc_key1": [np.nan, np.nan, 6/11, np.nan, 5/11, 6/12, 7/13]})
+        df_expect["target_enc_key1"] = df_expect["target_enc_key1"].astype("float32")
+        df_actual = agger.all_predict(df)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # fit
+        agger.fit(df)
+
+        expect = {"a": 5/11,
+                  "b": 7/12,
+                  "c": 7/14}
+
+        self.assertEqual(expect, agger.feature_factory_dict["key1"]["TargetEncoder"].data_dict)
+
+        # partial predict
+        df_test = pd.DataFrame({"key1": ["a", "b", "b", "c", "d"]})
+        df_expect = pd.DataFrame({"key1": ["a", "b", "b", "c", "d"],
+                                  "target_enc_key1": [5/11, 7/12, 7/12, 7/14, np.nan]})
+        df_expect["target_enc_key1"] = df_expect["target_enc_key1"].astype("float32")
+        df_actual = agger.partial_predict(df_test)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # partial fit
+        df_partial = pd.DataFrame({"key1": ["a", "b", "b", "d", "d"],
+                                   "answered_correctly": [0, 0, 1, 1, 0]})
+
+        agger.fit(df_partial)
+        expect = {"a": 5/12,
+                  "b": 8/14,
+                  "c": 7/14,
+                  "d": 1/2}
+
+        self.assertEqual(expect, agger.feature_factory_dict["key1"]["TargetEncoder"].data_dict)
+
+
 if __name__ == "__main__":
     unittest.main()

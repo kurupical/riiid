@@ -87,27 +87,40 @@ class CountEncoder(FeatureFactory):
 class TargetEncoder(FeatureFactory):
     feature_name_base = "target_enc"
 
+    def __init__(self,
+                 column: Union[list, str],
+                 initial_weight: int = 0,
+                 initial_score: float = 0,
+                 split_num: int = 1,
+                 logger: Union[Logger, None] = None):
+        super().__init__(column=column,
+                         split_num=split_num,
+                         logger=logger)
+        self.initial_weight = initial_weight
+        self.initial_score = initial_score
+
     def fit(self,
             df: pd.DataFrame,
             key: str,
             feature_factory_dict: Dict[Union[str, tuple],
                                        Dict[str, FeatureFactory]]):
+
+        initial_bunshi = self.initial_score * self.initial_weight
         if key not in self.data_dict:
-            self.data_dict[key] = df["answered_correctly"].sum() / len(df)
+            self.data_dict[key] = (df["answered_correctly"].sum() + initial_bunshi)/ (len(df) + self.initial_weight)
         else:
             # count_encoderの値は更新済のため、
             # count = 4, len(df) = 1の場合、もともと3件あって1件が足されたとかんがえる
             if type(self.column) == list:
-                count = feature_factory_dict[tuple(self.column)]["CountEncoder"].data_dict[key]
+                count = feature_factory_dict[tuple(self.column)]["CountEncoder"].data_dict[key] + self.initial_weight
             elif type(self.column) == str:
-                count = feature_factory_dict[self.column]["CountEncoder"].data_dict[key]
+                count = feature_factory_dict[self.column]["CountEncoder"].data_dict[key] + self.initial_weight
             else:
                 raise ValueError
             target_enc = self.data_dict[key]
 
             # パフォーマンス対策:
-            # df["foo"] 1ms
-            # df.values[(fooの場所)] 70us
+            # df["answered_correctly"].sum()
             ans_sum = df["answered_correctly"].values
             if len(df) == 1:
                 ans_sum = ans_sum[0]
@@ -121,7 +134,7 @@ class TargetEncoder(FeatureFactory):
     def all_predict(self,
                     df: pd.DataFrame):
         def f(series):
-            return series.shift(1).cumsum() / np.arange(len(series))
+            return (series.shift(1).cumsum() + self.initial_weight * self.initial_score) / (np.arange(len(series)) + self.initial_weight)
 
         self.logger.info(f"target_encoding_all_{self.column}")
 
