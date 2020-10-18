@@ -48,11 +48,38 @@
   * 20M行にして夜放置してみる
 
 # 2020/10/17
-* exp013: CV: 0.756(10modelと比べて+0.005)
-* EDA
+## experiment
+* exp013: CV: 0.756(10modelと比べて+0.005) LB: 0.742
+* exp013-2: exp013はsplit_numミスってたので、それの修正 これとexp011-2どっちがいいか？
+* exp014: 3model(30Mrow) => CV 0.757(1model, 2300epoch)途中で終わり
+* exp011-2: exp013と同じモデルで、fitの頻度を10000=>300に変更: LB 0.750
+* exp015: TargetEncoding with initial weight
+  * user_idとtimestampでソートするよう修正。。
+* exp016: TargetEncoding with initial weight + user_ability
+##  EDA
   * tags 003_tags_vs_targetencoder
     * ![image_1](image_1.png)
     * まあ、tags1~6のcountencodingで十分カバーできてるかなぁ…
-  * user_id
+  * user_id 004_user_id_answered_correctly
+    * 成績悪い人、成績いい人を比較する
+      * 成績悪い人はlecture受けてる件数が多い
+        * ![image_2](image_2.png)
+      * いい人はlecture受けてる件数が少ない
+        * ![image_3](image_3.png)
+  * user_level
+    * 頭が良ければ正解率高いとは限らん。その人にあった問題を選んで勉強するはず。そのレベルを見る。
+      * ![image_4](image_4.png)
+      * ![image_5](image_5.png)
+    * target_encoding, 初期値ブレがち。200件*0.655を最初から加重しとくのがよさそう！ -> exp015
+      * ![image_6](image_6.png)
 
+# 2020/10/18
+## experiment
+* exp015: TargetEncoding with initial weight => CV: 0.752(1model) +0.002 from exp011 -> LB: 0.732(!?)
+  * user_idとtimestampでソートするよう修正。
+* exp016: TargetEncoding with initial weight + user_ability => CV: 0.756) +0.006 from exp011
+* exp017: initial_score, initial_weight設定忘れてる...
+  * あと、なんかexp015, exp016がuser_idとcontent_idの順番逆なのになぜか動いていたっぽい。けど今は動かない。
+  * スコアが低いのもそこらへんでなんかバグってるのが要因では。。
+* 
 </div>

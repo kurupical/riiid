@@ -19,7 +19,7 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/ex_013/20201017154201"
+model_dir = "../output/ex_015/20201017230327"
 
 data_types_dict = {
     'row_id': 'int64',
@@ -75,13 +75,11 @@ def run(debug,
     feature_factory_dict["tags"] = {
         "TagsSeparator": TagsSeparator()
     }
-
     for column in ["user_id", "content_id", "content_type_id", "prior_question_had_explanation", "part",
                    "tags1", "tags2", "tags3", "tags4", "tags5", "tags6"]:
-        is_partial_fit = column == "content_id"
         feature_factory_dict[column] = {
             "CountEncoder": CountEncoder(column=column),
-            "TargetEncoder": TargetEncoder(column=column, is_partial_fit=is_partial_fit)
+            "TargetEncoder": TargetEncoder(column=column)
         }
     feature_factory_dict["user_id"]["MeanAggregatorTimestamp"] = MeanAggregator(column="user_id",
                                                                                 agg_column="timestamp",
@@ -97,7 +95,7 @@ def run(debug,
                    ("user_id", "tag"), ("user_id", "part"), ("content_type_id", "part")]:
         feature_factory_dict[column] = {
             "CountEncoder": CountEncoder(column=list(column)),
-            "TargetEncoder": TargetEncoder(column=list(column))
+            "TargetEncoder": TargetEncoder(column=list(column), initial_score=0.66, initial_weight=200)
         }
     feature_factory_manager = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
                                                     logger=logger)
@@ -112,7 +110,7 @@ def run(debug,
         df = pd.concat([pd.merge(df[df["content_type_id"] == 0], df_question,
                                  how="left", left_on="content_id", right_on="question_id"),
                         pd.merge(df[df["content_type_id"] == 1], df_lecture,
-                                 how="left", left_on="content_id", right_on="lecture_id")])
+                                 how="left", left_on="content_id", right_on="lecture_id")]).sort_values(["user_id", "timestamp"])
         df = feature_factory_manager.feature_factory_dict["content_id"]["TargetEncoder"].all_predict(df)
         feature_factory_manager.fit(df, partial_predict_mode=False)
 
@@ -156,7 +154,7 @@ def run(debug,
                          right_on="question_id")
         w_df2 = pd.merge(df_test[df_test["content_type_id"] == 1], df_lecture, how="left", left_on="content_id",
                          right_on="lecture_id")
-        df_test = pd.concat([w_df1, w_df2])
+        df_test = pd.concat([w_df1, w_df2]).sort_values(["user_id", "timestamp"])
         df_test["tag"] = df_test["tag"].fillna(-1)
         df_test["correct_answer"] = df_test["correct_answer"].fillna(-1)
         df_test["bundle_id"] = df_test["bundle_id"].fillna(-1)
@@ -184,5 +182,5 @@ def run(debug,
             df_test_prev.to_csv(f"{i}.csv")
 
 if __name__ == "__main__":
-    run(debug=False,
+    run(debug=True,
         model_dir=model_dir)

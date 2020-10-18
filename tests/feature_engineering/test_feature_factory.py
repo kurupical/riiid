@@ -257,7 +257,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
                 "CountEncoder": CountEncoder(column="content_id"),
                 "TargetEncoder": TargetEncoder(column="content_id",
                                                initial_weight=10,
-                                               initial_score=0.5)},
+                                               initial_score=0.5,
+                                               is_partial_fit=True)},
             "user_id": {
                 "CountEncoder": CountEncoder(column="user_id"),
                 "TargetEncoder": TargetEncoder(column="user_id",
