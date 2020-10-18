@@ -7,7 +7,8 @@ from feature_engineering.feature_factory import \
     CountEncoder, \
     TargetEncoder, \
     MeanAggregator, \
-    UserLevelEncoder
+    UserLevelEncoder, \
+    NUniqueEncoder
 from experiment.common import get_logger
 
 class PartialAggregatorTestCase(unittest.TestCase):
@@ -337,6 +338,61 @@ class PartialAggregatorTestCase(unittest.TestCase):
             actual[k] = np.float32(np.round(v, 5))
 
         self.assertEqual(expect, agger.feature_factory_dict["user_id"]["UserLevelEncoder"].data_dict)
+
+    def test_fit_nunique(self):
+        """
+        nunique
+        :return:
+        """
+        df = pd.DataFrame({"key1": ["a", "a", "b", "b"],
+                           "val": ["x", "x", "x", "y"]})
+        logger = get_logger()
+        feature_factory_dict = {
+            "key1": {
+                "CountEncoder": CountEncoder(column="key1"),
+                "NUniqueEncoder": NUniqueEncoder(groupby="key1", column="val")
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+        # predict_all
+        df_expect = pd.DataFrame({"key1": ["a", "a", "b", "b"],
+                                  "val": ["x", "x", "x", "y"],
+                                  "nunique_val_by_key1": [1, 1, 1, 2],
+                                  "new_ratio_nunique_val_by_key1": [1, 0.5, 1, 1]})
+        df_expect["nunique_val_by_key1"] = df_expect["nunique_val_by_key1"].astype("int32")
+        df_expect["new_ratio_nunique_val_by_key1"] = df_expect["new_ratio_nunique_val_by_key1"].astype("float32")
+        df_actual = agger.all_predict(df)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # fit
+        agger.fit(df)
+
+        # partial predict
+        df_actual = agger.partial_predict(df)
+        df_expect = pd.DataFrame({"key1": ["a", "a", "b", "b"],
+                                  "val": ["x", "x", "x", "y"],
+                                  "nunique_val_by_key1": [1, 1, 2, 2], # fitは１行ずつ読まないので、[1, 1, 1, 2]ではない
+                                  "new_ratio_nunique_val_by_key1": [0.5, 0.5, 1, 1]})
+        df_expect["nunique_val_by_key1"] = df_expect["nunique_val_by_key1"].astype("int32")
+        df_expect["new_ratio_nunique_val_by_key1"] = df_expect["new_ratio_nunique_val_by_key1"].astype("float32")
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # partial fit
+        df_partial = pd.DataFrame({"key1": ["a", "a", "b", "c"],
+                                   "val": ["x", "y", "x", "y"]})
+        agger.fit(df_partial)
+
+        df = pd.DataFrame({"key1": ["a", "b", "c", "d"],
+                           "val": ["", "", "", ""]})
+        df_expect = pd.DataFrame({"key1": ["a", "b", "c", "d"],
+                                  "val": ["", "", "", ""],
+                                  "nunique_val_by_key1": [2, 2, 1, 0],
+                                  "new_ratio_nunique_val_by_key1": [0.5, 2/3, 1, np.nan]})
+        df_expect["nunique_val_by_key1"] = df_expect["nunique_val_by_key1"].astype("int32")
+        df_expect["new_ratio_nunique_val_by_key1"] = df_expect["new_ratio_nunique_val_by_key1"].astype("float32")
+        df_actual = agger.partial_predict(df)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
 
 if __name__ == "__main__":
