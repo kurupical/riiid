@@ -362,6 +362,44 @@ class NUniqueEncoder(FeatureFactory):
         df[self.make_col_name] = df[self.make_col_name].fillna(0).astype("int32")
         return df
 
+
+class ShiftDiffEncoder(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 groupby: str,
+                 column: str,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.groupby = groupby
+        self.column = column
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.make_col_name = f"shiftdiff_{self.column}_by_{self.groupby}"
+        self.data_dict = {}
+
+    def fit(self,
+            df: pd.DataFrame,
+            key: str,
+            feature_factory_dict: Dict[Union[str, tuple],
+                                       Dict[str, object]]):
+        self.data_dict[key] = df[self.column].iloc[-1]
+        return self
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        df[self.make_col_name] = df[self.column] - df.groupby(self.groupby)[self.column].shift(1)
+        df[self.make_col_name] = df[self.make_col_name].fillna(0).astype("int64")
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        w_diff = [self.data_dict[x] if x in self.data_dict else np.nan for x in df[self.groupby].values]
+        df[self.make_col_name] = df[self.column] - w_diff
+        df[self.make_col_name] = df[self.make_col_name].fillna(0).astype("int64")
+        return df
+
+
 class FeatureFactoryManager:
     def __init__(self,
                  feature_factory_dict: Dict[Union[str, tuple],

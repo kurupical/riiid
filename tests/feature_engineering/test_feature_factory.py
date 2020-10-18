@@ -8,7 +8,8 @@ from feature_engineering.feature_factory import \
     TargetEncoder, \
     MeanAggregator, \
     UserLevelEncoder, \
-    NUniqueEncoder
+    NUniqueEncoder, \
+    ShiftDiffEncoder
 from experiment.common import get_logger
 
 class PartialAggregatorTestCase(unittest.TestCase):
@@ -393,6 +394,47 @@ class PartialAggregatorTestCase(unittest.TestCase):
         df_expect["new_ratio_nunique_val_by_key1"] = df_expect["new_ratio_nunique_val_by_key1"].astype("float32")
         df_actual = agger.partial_predict(df)
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+    def test_fit_shiftdiff(self):
+        """
+        nunique
+        :return:
+        """
+        df = pd.DataFrame({"key1": ["a", "a", "b", "b"],
+                           "val": [1, 2, 4, 8]})
+        logger = get_logger()
+        feature_factory_dict = {
+            "key1": {
+                "ShiftDiffEncoder": ShiftDiffEncoder(groupby="key1", column="val")
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+        # predict_all
+        df_expect = pd.DataFrame({"key1": ["a", "a", "b", "b"],
+                                  "val": [1, 2, 4, 8],
+                                  "shiftdiff_val_by_key1": [0, 1, 0, 4]})
+        df_expect["shiftdiff_val_by_key1"] = df_expect["shiftdiff_val_by_key1"].astype("int64")
+        df_actual = agger.all_predict(df)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # fit
+        agger.fit(df)
+
+        # partial predict
+        df = pd.DataFrame({"key1": ["a", "a", "b", "c"],
+                           "val": [4, 8, 16, 1]})
+        df_actual = agger.partial_predict(df)
+        df_expect = pd.DataFrame({"key1": ["a", "a", "b", "c"],
+                                  "val": [4, 8, 16, 1],
+                                  "shiftdiff_val_by_key1": [2, 6, 8, 0]})
+        df_expect["shiftdiff_val_by_key1"] = df_expect["shiftdiff_val_by_key1"].astype("int64")
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # partial fit
+        df_partial = pd.DataFrame({"key1": ["a", "a", "b", "c"],
+                                   "val": ["x", "y", "x", "y"]})
+        agger.fit(df_partial)
 
 
 if __name__ == "__main__":
