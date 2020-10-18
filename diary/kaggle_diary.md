@@ -77,9 +77,20 @@
 ## experiment
 * exp015: TargetEncoding with initial weight => CV: 0.752(1model) +0.002 from exp011 -> LB: 0.732(!?)
   * user_idとtimestampでソートするよう修正。
-* exp016: TargetEncoding with initial weight + user_ability => CV: 0.756) +0.006 from exp011
+* exp016: TargetEncoding with initial weight + user_ability => CV: 0.756) +0.006 from exp011 -> LB: 0.666(!?!?)
 * exp017: initial_score, initial_weight設定忘れてる...
   * あと、なんかexp015, exp016がuser_idとcontent_idの順番逆なのになぜか動いていたっぽい。けど今は動かない。
   * スコアが低いのもそこらへんでなんかバグってるのが要因では。。
-* 
+* exp018: exp011を20model
+* exp019: exp011 + nunique, shiftdiff
+## EDA
+* 006_previous_X
+  * questionに絞ると、前のquestionと今のquestionが一緒の場合、正解率は高い(当たり前か!?)
+  * ![image_7](image_7.png)
+  * timestamp_diffみると、1000~10000は正解率低い
+  * ![image_8](image_8.png)
+
+# 2020/10/19
+* exp020:
 </div>
+
