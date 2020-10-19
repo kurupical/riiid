@@ -328,11 +328,17 @@ class NUniqueEncoder(FeatureFactory):
             key: str,
             feature_factory_dict: Dict[Union[str, tuple],
                                        Dict[str, object]]):
-        for column in df[self.column].values:
+
+        # TODO:
+        if len(self.data_dict) == 0:
+            self.data_dict[key] = df[self.column].drop_duplicates().values.tolist()
+            return self
+        for column in df[self.column].drop_duplicates().values:
             if key not in self.data_dict:
-                self.data_dict[key] = set(column)
+                self.data_dict[key] = [column]
             else:
-                self.data_dict[key].add(column)
+                if column not in self.data_dict[key]:
+                    self.data_dict[key].append(column)
         return self
 
     def all_predict(self,
@@ -343,16 +349,17 @@ class NUniqueEncoder(FeatureFactory):
             groupby = x[0]
             column = x[1]
             if groupby not in self.data_dict:
-                self.data_dict[groupby] = set(column)
+                self.data_dict[groupby] = [column]
             else:
-                self.data_dict[groupby].add(column)
+                if column not in self.data_dict[groupby]:
+                    self.data_dict[groupby].append(column)
             ret.append(len(self.data_dict[groupby]))
-            print(self.data_dict, groupby, ret)
 
         df[self.make_col_name] = ret
         df[self.make_col_name] = df[self.make_col_name].astype("int32")
         df[f"new_ratio_{self.make_col_name}"] = (df[self.make_col_name] / (df[f"count_enc_{self.groupby}"]+1)).astype("float32")
         return df
+
 
     def partial_predict(self,
                         df: pd.DataFrame):
