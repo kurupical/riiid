@@ -15,7 +15,7 @@ class FeatureFactory:
         self.split_num = split_num
         self.data_dict = {}
         self.is_partial_fit = is_partial_fit
-        self.make_col_name = f"{self.feature_name_base}_{self.column}"
+        self.make_col_name = f"{self.feature_name_base}_{self.column}".replace(" ", "").replace("'", "")
 
     def fit(self,
             df: pd.DataFrame,
@@ -72,8 +72,7 @@ class CountEncoder(FeatureFactory):
     def all_predict(self,
                     df: pd.DataFrame):
         self.logger.info(f"count_encoding_all_{self.column}")
-        col_name = f"{self.feature_name_base}_{self.column}"
-        df[col_name] = df.groupby(self.column).cumcount().astype("int32")
+        df[self.make_col_name] = df.groupby(self.column).cumcount().astype("int32")
 
         return df
 
@@ -459,7 +458,7 @@ class FeatureFactoryManager:
                 df = factory.make_feature(df)
             for factory in dicts.values():
                 if factory.is_partial_fit and partial_predict_mode:
-                    df = factory.partial_predict(df)
+                    df = factory.all_predict(df)
 
     def fit_predict(self,
                     df: pd.DataFrame):
