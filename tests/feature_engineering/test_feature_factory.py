@@ -256,7 +256,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
         logger = get_logger()
         feature_factory_dict = {
             "content_id": {
-                "CountEncoder": CountEncoder(column="content_id"),
+                "CountEncoder": CountEncoder(column="content_id",
+                                             is_partial_fit=True),
                 "TargetEncoder": TargetEncoder(column="content_id",
                                                initial_weight=10,
                                                initial_score=0.5,
@@ -299,7 +300,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
                            "content_id": ["x", "x", "x", "y", "y"],
                            "answered_correctly": [0, 0, 1, 0, 1]})
 
-        agger.fit(df)
+        agger.fit(df, partial_predict_mode=True)
         a = np.array([0.5]*10 + [6/13]).mean()
         b = np.array([0.5]*10 + [6/13] + [6/13]).mean()
         c = np.array([0.5]*10 + [6/12] + [6/12]).mean()
@@ -328,7 +329,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
                                    "content_id": ["x", "z"],
                                    "answered_correctly": [0, 0]})
 
-        agger.fit(df_partial)
+        agger.fit(df_partial, partial_predict_mode=True)
         expect = {"a": np.array([0.5]*10 + [6/13] + [6/14]).mean(),
                   "b": b,
                   "c": c,
