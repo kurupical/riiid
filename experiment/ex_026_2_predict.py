@@ -153,7 +153,7 @@ def run(debug,
         if debug:
             update_record = 1
         else:
-            update_record = 150
+            update_record = 50
         if len(df_test_prev) > update_record:
             df_test_prev["answered_correctly"] = answered_correctlies
             df_test_prev["user_answer"] = user_answers

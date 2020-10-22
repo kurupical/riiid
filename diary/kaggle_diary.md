@@ -114,7 +114,13 @@
 
 # 2020/10/22
 ## experiment
-* exp025: user_levelとnuniqueを削って、content_id系だけ早く更新する
+* exp025: user_levelとnuniqueを削って、content_id系だけ早く更新する -> CV: 0.723?
+  * バグってるので要確認
 * exp026: ("user_id", "content_id")を加える
 * exp027: parameter tuning 旅行中
+
+# 2020/10/23
+## experiment
+* exp025-2: update_record=50
+
 </div>

@@ -81,7 +81,7 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
 
     model_id = os.path.basename(fname).replace(".pickle", "")
     print(model_id)
-    for _ in range(100):
+    for _ in range(10000):
         params = {
             'objective': 'binary',
             'num_leaves': random.choice([8, 16, 32, 64, 128]),
@@ -106,6 +106,7 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
                       output_dir=output_dir,
                       model_id=model_id,
                       exp_name=model_id,
-                      drop_user_id=True)
+                      drop_user_id=True,
+                      experiment_id=2)
         del params
     break
