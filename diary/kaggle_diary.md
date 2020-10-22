@@ -81,7 +81,7 @@
 * exp017: initial_score, initial_weight設定忘れてる...
   * あと、なんかexp015, exp016がuser_idとcontent_idの順番逆なのになぜか動いていたっぽい。けど今は動かない。
   * スコアが低いのもそこらへんでなんかバグってるのが要因では。。
-* exp018: exp011を20model
+* exp018: exp011を20model -> LB: 0.750
 * exp019: exp011 + nunique, shiftdiff
 ## EDA
 * 006_previous_X
@@ -91,6 +91,30 @@
   * ![image_8](image_8.png)
 
 # 2020/10/19
-* exp020:
-</div>
+* exp019 -> CV: 0.764 / LB: 0.751
+* exp020: exp011を丸コピ(exp019が上がりすぎてるので怪しい。。) -> CV戻った
+* exp021: user_levelのみ + exp019 (sort_valueなし) -> CV: 0.769 / LB: 0.711 :(
+* exp022: exp021 + lecture.csvなし
+* exp023: exp021 + type_of, tag 使う
 
+# 2020/10/20
+* predictionの特徴作成本当にあってるか、確認するスクリプト作成 ok
+* exp023: target_encoderがリークしてた…のか。
+  * is_partial_fit：未来のデータで過去のデータをencodeしている
+* exp024: environmentちゃんと動いてるか確認(CVとかは見ない) exp021でやる
+* exp021_2: exp021 + partial_predict_mode変更
+
+# 2020/10/21
+## EDA
+* 007_shiftdiff
+  * ![image_9](image_9.png)
+
+## experiment
+* exp019_2: shiftdiffをリアルタイムに -> LB: 0.756!
+
+# 2020/10/22
+## experiment
+* exp025: user_levelとnuniqueを削って、content_id系だけ早く更新する
+* exp026: ("user_id", "content_id")を加える
+* exp027: parameter tuning 旅行中
+</div>

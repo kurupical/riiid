@@ -90,7 +90,7 @@ class EnvironmentManager:
         self.df_test_prev["user_answer"] = self.user_answer
         self.df_test_prev["user_answer"] = self.df_test_prev["user_answer"].astype("int8")
         self.df_test_prev["answered_correctly"] = self.df_test_prev["answered_correctly"].replace(-1, np.nan)
-        self.feature_factory_manager.fit(self.df_test_prev)
+        self.feature_factory_manager.fit(self.df_test_prev, partial_predict_mode=True)
         self.answered_correctly = []
         self.user_answer = []
         self.df_test_prev = pd.DataFrame()

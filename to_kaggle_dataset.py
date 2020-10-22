@@ -6,7 +6,7 @@ if os.path.isdir("riiid_code"):
     shutil.rmtree("riiid_code")
 os.makedirs("riiid_code/pretrained")
 
-for f in glob.glob("output/ex_013/20201016235440/*"):
+for f in glob.glob("output/ex_025/20201022082802/*"):
     if "csv" in f:
         continue
     else:
@@ -15,5 +15,5 @@ shutil.copytree("experiment", "riiid_code/experiment/")
 shutil.rmtree("riiid_code/experiment/mlruns")
 shutil.copytree("feature_engineering", "riiid_code/feature_engineering/")
 shutil.copytree("model", "riiid_code/model/")
-shutil.copytree("pipeline", "riiid_code/pipeline/")
+# shutil.copytree("pipeline", "riiid_code/pipeline/")
 

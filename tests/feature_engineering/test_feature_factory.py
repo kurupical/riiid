@@ -428,15 +428,19 @@ class PartialAggregatorTestCase(unittest.TestCase):
         df_actual = agger.partial_predict(df)
         df_expect = pd.DataFrame({"key1": ["a", "a", "b", "c"],
                                   "val": [4, 8, 16, 1],
-                                  "shiftdiff_val_by_key1": [2, 6, 8, 0]})
+                                  "shiftdiff_val_by_key1": [2, 4, 8, 1]})
         df_expect["shiftdiff_val_by_key1"] = df_expect["shiftdiff_val_by_key1"].astype("int64")
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
-        # partial fit
-        df_partial = pd.DataFrame({"key1": ["a", "a", "b", "c"],
-                                   "val": ["x", "y", "x", "y"]})
-        agger.fit(df_partial)
+        # partial predict 2 (リアルタイムfitができていることを確認)
+        df = pd.DataFrame({"key1": ["a", "a"],
+                           "val": [32, 64]})
+        df_expect = pd.DataFrame({"key1": ["a", "a"],
+                                  "val": [32, 64],
+                                  "shiftdiff_val_by_key1": [24, 32]})
+        df_actual = agger.partial_predict(df)
 
+        pd.testing.assert_frame_equal(df_expect, df_actual)
 
 if __name__ == "__main__":
     unittest.main()

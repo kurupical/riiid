@@ -9,13 +9,25 @@ class FeatureFactory:
                  column: Union[list, str],
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False):
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
+        """
+
+        :param column:
+        :param split_num:
+        :param logger:
+        :param is_partial_fit:
+        :param is_all_fit:
+        :param onebyone:
+            fit時のflag. fitは処理時間削減のため通常150行に1回まとめて行うが、そうではなく逐次fitしたいときはTrueを入れる
+        """
         self.column = column
         self.logger = logger
         self.split_num = split_num
         self.data_dict = {}
         self.is_partial_fit = is_partial_fit
-        self.make_col_name = f"{self.feature_name_base}_{self.column}".replace(" ", "").replace("'", "")
+        self.onebyone = onebyone
+        self.make_col_name = f"{self.feature_name_base}_{self.column}"# .replace(" ", "").replace("'", "")
 
     def fit(self,
             df: pd.DataFrame,
@@ -54,7 +66,7 @@ class FeatureFactory:
         raise NotImplementedError
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(key=f{self.column}"
+        return f"{self.__class__.__name__}(key={self.column})"
 
 class CountEncoder(FeatureFactory):
     feature_name_base = "count_enc"
@@ -94,11 +106,13 @@ class TargetEncoder(FeatureFactory):
                  initial_score: float = 0,
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False):
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
         super().__init__(column=column,
                          split_num=split_num,
                          logger=logger,
-                         is_partial_fit=is_partial_fit)
+                         is_partial_fit=is_partial_fit,
+                         onebyone=onebyone)
         self.initial_weight = initial_weight
         self.initial_score = initial_score
 
@@ -158,9 +172,11 @@ class TagsSeparator(FeatureFactory):
 
     def __init__(self,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False):
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
 
     def fit(self,
             df: pd.DataFrame,
@@ -196,6 +212,9 @@ class TagsSeparator(FeatureFactory):
                         df: pd.DataFrame):
         return self._predict(df)
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
 class MeanAggregator(FeatureFactory):
     feature_name_base = "mean"
 
@@ -204,10 +223,12 @@ class MeanAggregator(FeatureFactory):
                  agg_column: str,
                  remove_now: bool,
                  logger: Union[Logger, None] =None,
-                 is_partial_fit: bool = False):
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
         super().__init__(column=column,
                          logger=logger,
-                         is_partial_fit=is_partial_fit)
+                         is_partial_fit=is_partial_fit,
+                         onebyone=onebyone)
         self.agg_column = agg_column
         self.remove_now = remove_now
         self.make_col_name = f"{self.feature_name_base}_{self.agg_column}_by_{self.column}"
@@ -255,12 +276,14 @@ class UserLevelEncoder(FeatureFactory):
                  initial_score: float =.0,
                  initial_weight: float = 0,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False):
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
         self.column = "user_id"
         self.initial_score = initial_score
         self.initial_weight = initial_weight
         self.logger = logger
-        self.is_partial_fit = False
+        self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
         self.data_dict = {}
         self.make_col_name = f"{self.feature_name_base}"
 
@@ -314,11 +337,13 @@ class NUniqueEncoder(FeatureFactory):
                  groupby: str,
                  column: str,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False):
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
         self.groupby = groupby
         self.column = column
         self.logger = logger
         self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
         self.make_col_name = f"nunique_{self.column}_by_{self.groupby}"
         self.data_dict = {}
 
@@ -376,11 +401,13 @@ class ShiftDiffEncoder(FeatureFactory):
                  groupby: str,
                  column: str,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False):
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
         self.groupby = groupby
         self.column = column
         self.logger = logger
         self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
         self.make_col_name = f"shiftdiff_{self.column}_by_{self.groupby}"
         self.data_dict = {}
 
@@ -400,9 +427,32 @@ class ShiftDiffEncoder(FeatureFactory):
 
     def partial_predict(self,
                         df: pd.DataFrame):
-        w_diff = [self.data_dict[x] if x in self.data_dict else np.nan for x in df[self.groupby].values]
-        df[self.make_col_name] = df[self.column] - w_diff
-        df[self.make_col_name] = df[self.make_col_name].fillna(0).astype("int64")
+        """
+        リアルタイムfit
+        :param df:
+        :return:
+        """
+        groupby_values = df[self.groupby].values
+        col_values = df[self.column].values
+
+        def f(idx):
+            """
+            xがnullのときは、辞書に前の時間が登録されていればその時間との差分を返す。
+            そうでなければ、0を返す
+            :param idx:
+            :return:
+            """
+            if groupby_values[idx] in self.data_dict:
+                return self.data_dict[groupby_values[idx]]
+            else:
+                return 0
+
+        w_diff = df.groupby(self.groupby)[self.column].shift(1)
+        w_diff = [x if not np.isnan(x) else f(idx) for idx, x in enumerate(w_diff.values)]
+        df[self.make_col_name] = (df[self.column] - w_diff).astype("int64")
+
+        for key, w_df in df.groupby(self.groupby):
+            self.data_dict[key] = w_df[self.column].values[-1]
         return df
 
 
@@ -437,7 +487,17 @@ class FeatureFactoryManager:
 
     def fit(self,
             df: pd.DataFrame,
-            partial_predict_mode: bool=True):
+            partial_predict_mode: bool = False,
+            onebyone_mode: bool = False,
+            is_first_fit: bool = False):
+        """
+
+        :param df:
+        :param partial_predict_mode:
+        :param onebyone_mode: 通常fitは150件程度まとめて実施するが、そうではなく毎回バッチ更新したいとき
+        :param first_fit: データ取り込み後最初のfitをするときはTrue.
+        :return:
+        """
         for column, dicts in self.feature_factory_dict.items():
             # カラム(ex: user_idなど)ごとに処理
             if type(column) == tuple:
@@ -451,15 +511,19 @@ class FeatureFactoryManager:
             for key, w_df in group:
                 # カラムのキー(ex. user_id=20000)ごとに処理
                 for factory in dicts.values():
-                    factory.fit(df=w_df,
-                                key=key,
-                                feature_factory_dict=self.feature_factory_dict)
+                    if factory.onebyone == onebyone_mode or is_first_fit:
+                        factory.fit(df=w_df,
+                                    key=key,
+                                    feature_factory_dict=self.feature_factory_dict)
             for factory in dicts.values():
                 df = factory.make_feature(df)
-            for factory in dicts.values():
-                if factory.is_partial_fit and partial_predict_mode:
-                    df = factory.all_predict(df)
 
+            for factory in dicts.values():
+                if factory.is_partial_fit:
+                    if partial_predict_mode:
+                        df = factory.partial_predict(df)
+                    else:
+                        df = factory.all_predict(df)
     def fit_predict(self,
                     df: pd.DataFrame):
         self.fit(df)
