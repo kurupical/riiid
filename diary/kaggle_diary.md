@@ -124,4 +124,7 @@
 * exp025-2: update_record=50
 * exp028: exp019_2からnunique系を削り、update_record=50
 
+# 2020/10/24
+## experiment
+* 
 </div>
