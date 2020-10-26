@@ -63,7 +63,7 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
         'num_leaves': 16,
         'min_data_in_leaf': 15,  # 42,
         'max_depth': -1,
-        'learning_rate': 0.3,
+        'learning_rate': 0.1,
         'boosting': 'gbdt',
         'bagging_fraction': 0.1,  # 0.5,
         'feature_fraction': 0.5,
