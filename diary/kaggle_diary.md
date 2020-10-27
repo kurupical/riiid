@@ -125,5 +125,19 @@
 
 # 2020/10/25
 ## experiment
-* exp028 parameter tuning結果の反映(base: exp019
+* exp028 parameter tuning結果の反映(base: exp019)
+
+# 2020/10/26
+## EDA
+* answerの精度が低い人、user_answerが0, 3に固まりがち
+
+![image_10](image_10.png)
+
+* そもそも、answer=2が少ない…
+
+![image_11](image_11.png)
+
+# 2020/10/27
+## experiment
+* exp029: 各target_encをuser_idのtarget_encとぶつける
 </div>
