@@ -61,6 +61,21 @@ class FeatureFactory:
             return df
         raise ValueError
 
+    def _partial_predict2(self,
+                          df: pd.DataFrame,
+                          column: str):
+        if type(self.column) == list:
+            df[column] = [self.data_dict[tuple(x)][column] if tuple(x) in self.data_dict else np.nan
+                          for x in df[self.column].values]
+            df[column] = df[column].astype("float32")
+            return df
+        if type(self.column) == str:
+            df[column] = [self.data_dict[x][column] if x in self.data_dict else np.nan
+                          for x in df[self.column].values]
+            df[column] = df[column].astype("float32")
+            return df
+        raise ValueError
+
     def partial_predict(self,
                         df: pd.DataFrame):
         raise NotImplementedError
@@ -94,6 +109,67 @@ class CountEncoder(FeatureFactory):
         df[self.make_col_name] = df[self.make_col_name].fillna(0).astype("int32")
         if "user_id" not in self.make_col_name:
             df[self.make_col_name] *= self.split_num
+        return df
+
+
+class Counter(FeatureFactory):
+    def __init__(self,
+                 groupby_column: str,
+                 agg_column: str,
+                 categories: list,
+                 split_num: int = 1,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
+        self.groupby_column = groupby_column
+        self.agg_column = agg_column
+        self.categories = categories
+        self.logger = logger
+        self.split_num = split_num
+        self.data_dict = {}
+        self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
+
+    def fit(self,
+            df: pd.DataFrame,
+            key: str,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        if key not in self.data_dict:
+            self.data_dict[key] = {}
+            for col in self.categories:
+                self.data_dict[key][col] = 0
+        for col, w_df in df.groupby(self.agg_column):
+            self.data_dict[key][col] += len(w_df)
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"categories_count_{self.groupby_column}")
+        for col in df[self.agg_column].drop_duplicates():
+            def f(series):
+                w = (series == col).astype("int8").values
+                return np.cumsum(w)
+
+            def f_ratio(series):
+                return series / (np.arange(len(series)) + 1)
+
+            col_name = f"groupby_{self.groupby_column}_{self.agg_column}_{col}_count"
+            df[col_name] = df.groupby(self.groupby_column)[self.agg_column].transform(f)
+            df[f"{col_name}_ratio"] = df.groupby(self.groupby_column)[col_name].transform(f_ratio)
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        cols = []
+        for col in self.categories:
+            col_name = f"groupby_{self.groupby_column}_{self.agg_column}_{col}_count"
+            cols.append(col_name)
+            df[col_name] = [self.data_dict[x][col] if x in self.data_dict else 0
+                            for x in df[self.groupby_column].values]
+            df[col_name] = df[col_name].astype("int32")
+
+        for col in cols:
+            df[f"{col}_ratio"] = df[col] / df["count_enc_user_id"]
         return df
 
 
@@ -448,21 +524,6 @@ class UserLevelEncoder2(FeatureFactory):
         df = df.drop("rate", axis=1)
         return df
 
-    def _partial_predict2(self,
-                          df: pd.DataFrame,
-                          column: str):
-        print(self.data_dict)
-        if type(self.column) == list:
-            df[column] = [self.data_dict[tuple(x)][column] if tuple(x) in self.data_dict else np.nan
-                          for x in df[self.column].values]
-            df[column] = df[column].astype("float32")
-            return df
-        if type(self.column) == str:
-            df[column] = [self.data_dict[x][column] if x in self.data_dict else np.nan
-                          for x in df[self.column].values]
-            df[column] = df[column].astype("float32")
-            return df
-        raise ValueError
 
     def partial_predict(self,
                         df: pd.DataFrame):
