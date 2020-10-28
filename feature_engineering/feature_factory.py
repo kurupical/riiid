@@ -215,6 +215,55 @@ class TagsSeparator(FeatureFactory):
     def __repr__(self):
         return f"{self.__class__.__name__}"
 
+
+
+class TargetEncodeVsUserId(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
+
+    def fit(self,
+            df: pd.DataFrame,
+            key: str,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return self._predict(df)
+
+    def _predict(self,
+                 df: pd.DataFrame):
+
+        target_cols = [x for x in df.columns if "target_enc_" in x and "user_id" not in x]
+
+        for col in target_cols:
+            col_name = f"target_enc_user_id_vs_{col}_diff"
+            df[col_name] = df["target_enc_user_id"] - df[col]
+            df[col_name] = df[col_name].astype("float32")
+        return df
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"targetenc_vsuserid")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+
 class MeanAggregator(FeatureFactory):
     feature_name_base = "mean"
 
@@ -329,6 +378,103 @@ class UserLevelEncoder(FeatureFactory):
             df[self.make_col_name] = df[self.make_col_name].fillna(self.initial_score)
         return df
 
+
+class UserLevelEncoder2(FeatureFactory):
+    def __init__(self,
+                 vs_column: str,
+                 initial_score: float =.0,
+                 initial_weight: float = 0,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
+        self.column = "user_id"
+        self.vs_column = vs_column
+        self.initial_score = initial_score
+        self.initial_weight = initial_weight
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
+        self.data_dict = {}
+
+    def fit(self,
+            df: pd.DataFrame,
+            key: str,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        initial_bunshi = self.initial_score * self.initial_weight
+
+        df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]
+        if key not in self.data_dict:
+            self.data_dict[key] = {}
+            self.data_dict[key][f"user_level_{self.vs_column}"] = (df["target_enc_content_id"].sum() + initial_bunshi) / (len(df) + self.initial_weight)
+            self.data_dict[key][f"user_rate_sum_{self.vs_column}"] = df["rate"].mean()
+            self.data_dict[key][f"user_rate_mean_{self.vs_column}"] = df["rate"].sum()
+        else:
+            user_level = self.data_dict[key][f"user_level_{self.vs_column}"]
+            user_rate_sum = self.data_dict[key][f"user_rate_sum_{self.vs_column}"]
+
+            count = feature_factory_dict["user_id"]["CountEncoder"].data_dict[key] + self.initial_weight
+
+            # パフォーマンス対策:
+            # df["answered_correctly"].sum()
+            ans_sum = df["target_enc_content_id"].sum()
+            rate_sum = df["rate"].sum()
+
+            self.data_dict[key][f"user_level_{self.vs_column}"] = ((count - len(df)) * user_level + ans_sum) / count
+            self.data_dict[key][f"user_rate_sum_{self.vs_column}"] = user_rate_sum + rate_sum
+            self.data_dict[key][f"user_rate_mean_{self.vs_column}"] = (user_rate_sum + rate_sum) / count
+        return self
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        def f_shift1_mean(series):
+            return (series.shift(1).cumsum() + self.initial_weight * self.initial_score) / (np.arange(len(series)) + self.initial_weight)
+
+        def f_shift1_sum(series):
+            return (series.shift(1).cumsum() + self.initial_weight * self.initial_score)
+
+        def f(series):
+            return (series.cumsum() + self.initial_weight * self.initial_score) / (np.arange(len(series)) + 1 + self.initial_weight)
+
+        df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]
+        df[f"user_rate_sum_{self.vs_column}"] = df.groupby("user_id")["rate"].transform(f_shift1_sum).astype("float32")
+        df[f"user_rate_mean_{self.vs_column}"] = df.groupby("user_id")["rate"].transform(f_shift1_mean).astype("float32")
+        df[f"user_level_{self.vs_column}"] = df.groupby("user_id")["target_enc_content_id"].transform(f).astype("float32")
+        df[f"diff_user_level_target_enc_{self.vs_column}"] = \
+            df[f"user_level_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]
+        df[f"diff_rate_mean_target_emc_{self.vs_column}"] = \
+            df[f"user_rate_mean_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]
+
+        df = df.drop("rate", axis=1)
+        return df
+
+    def _partial_predict2(self,
+                          df: pd.DataFrame,
+                          column: str):
+        print(self.data_dict)
+        if type(self.column) == list:
+            df[column] = [self.data_dict[tuple(x)][column] if tuple(x) in self.data_dict else np.nan
+                          for x in df[self.column].values]
+            df[column] = df[column].astype("float32")
+            return df
+        if type(self.column) == str:
+            df[column] = [self.data_dict[x][column] if x in self.data_dict else np.nan
+                          for x in df[self.column].values]
+            df[column] = df[column].astype("float32")
+            return df
+        raise ValueError
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        for col in [f"user_rate_sum_{self.vs_column}",
+                    f"user_rate_mean_{self.vs_column}",
+                    f"user_level_{self.vs_column}"]:
+            df = self._partial_predict2(df, column=col)
+        df[f"diff_user_level_target_enc_{self.vs_column}"] = \
+            (df[f"user_level_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]).astype("float32")
+        df[f"diff_rate_mean_target_emc_{self.vs_column}"] = \
+            (df[f"user_rate_mean_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]).astype("float32")
+        return df
 
 class NUniqueEncoder(FeatureFactory):
     feature_name_base = ""
@@ -500,6 +646,8 @@ class FeatureFactoryManager:
         """
         for column, dicts in self.feature_factory_dict.items():
             # カラム(ex: user_idなど)ごとに処理
+            if column == "postprocess":
+                continue
             if type(column) == tuple:
                 group = df.groupby(list(column))
             elif type(column) == str:
