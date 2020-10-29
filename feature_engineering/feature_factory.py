@@ -483,8 +483,8 @@ class UserLevelEncoder2(FeatureFactory):
         if key not in self.data_dict:
             self.data_dict[key] = {}
             self.data_dict[key][f"user_level_{self.vs_column}"] = (df["target_enc_content_id"].sum() + initial_bunshi) / (len(df) + self.initial_weight)
-            self.data_dict[key][f"user_rate_sum_{self.vs_column}"] = df["rate"].mean()
-            self.data_dict[key][f"user_rate_mean_{self.vs_column}"] = df["rate"].sum()
+            self.data_dict[key][f"user_rate_sum_{self.vs_column}"] = df["rate"].sum()
+            self.data_dict[key][f"user_rate_mean_{self.vs_column}"] = df["rate"].mean()
         else:
             user_level = self.data_dict[key][f"user_level_{self.vs_column}"]
             user_rate_sum = self.data_dict[key][f"user_rate_sum_{self.vs_column}"]
@@ -729,7 +729,7 @@ class FeatureFactoryManager:
 
             for factory in dicts.values():
                 if factory.is_partial_fit:
-                    if partial_predict_mode:
+                    if not is_first_fit:
                         df = factory.partial_predict(df)
                     else:
                         df = factory.all_predict(df)
