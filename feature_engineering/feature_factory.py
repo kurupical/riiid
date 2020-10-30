@@ -91,15 +91,17 @@ class CountEncoder(FeatureFactory):
             key: str,
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
-        if key not in self.data_dict:
+            if key not in self.data_dict:
             self.data_dict[key] = len(df)
-        else:
+            else:
             self.data_dict[key] += len(df)
 
     def all_predict(self,
                     df: pd.DataFrame):
         self.logger.info(f"count_encoding_all_{self.column}")
         df[self.make_col_name] = df.groupby(self.column).cumcount().astype("int32")
+        if "user_id" not in self.make_col_name:
+            df[self.make_col_name] *= self.split_num
 
         return df
 
