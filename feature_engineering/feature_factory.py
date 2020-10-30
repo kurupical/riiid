@@ -663,6 +663,29 @@ class ShiftDiffEncoder(FeatureFactory):
         return df
 
 
+class PreviousAnswer(FeatureFactory):
+    feature_name_base = "previous_answer"
+
+    def fit(self,
+            df: pd.DataFrame,
+            key: str,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        self.data_dict[key] = df["answered_correctly"].iloc[-1]
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"previous_encoding_all_{self.column}")
+        df[self.make_col_name] = df.groupby(self.column)["answered_correctly"].shift(1).fillna(-99).astype("int8")
+
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        df = self._partial_predict(df)
+        df[self.make_col_name] = df[self.make_col_name].fillna(-99).astype("int8")
+        return df
+
 class FeatureFactoryManager:
     def __init__(self,
                  feature_factory_dict: Dict[Union[str, tuple],
