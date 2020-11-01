@@ -275,7 +275,7 @@ class TagsSeparator(FeatureFactory):
         tag = df["tags"].str.split(" ", n=10, expand=True)
         tag.columns = [f"tags{i}" for i in range(1, len(tag.columns) + 1)]
 
-        for col in ["tags1", "tags2", "tags3", "tags4", "tags5", "tags6"]:
+        for col in ["tags1", "tags2"]:
             if col in tag.columns:
                 df[col] = pd.to_numeric(tag[col], errors='coerce').fillna(-1).astype("int16")
             else:
@@ -369,6 +369,89 @@ class PartSeparator(FeatureFactory):
 
         for i in [1, 2, 3, 4, 5, 6, 7]:
             df[f"part{i}"] = (df["part"] == i).astype("int8")
+        return df
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"tags_all")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+
+class UserCountBinningEncoder(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
+
+    def fit(self,
+            group,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return self._predict(df)
+
+    def _predict(self,
+                 df: pd.DataFrame):
+
+        df["user_count_bin"] = pd.cut(df["count_enc_user_id"], [-1, 30, 10**2, 10**2.5, 10**3, 10**4, 10**5],
+                                      labels=False).astype("uint8")
+        return df
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"tags_all")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+class PriorQuestionElapsedTimeBinningEncoder(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
+
+    def fit(self,
+            group,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return self._predict(df)
+
+    def _predict(self,
+                 df: pd.DataFrame):
+        df["prior_question_elapsed_time_bin"] = pd.cut(df["prior_question_elapsed_time"],
+                                                       [-1, 1000, 5000, 10000, 15000, 20000, 25000, 50000, 75000,
+                                                        100000, 1000000], labels=False).fillna(255).astype("uint8")
         return df
 
     def all_predict(self,
@@ -600,9 +683,6 @@ class CategoryLevelEncoder(FeatureFactory):
         for key, df in group[["answered_correctly", "content_id"]]:
             for category in self.categories:
                 w_df = df[df[self.agg_column] == category]
-                if len(w_df) == 0:
-                    continue
-
                 w_df["rate"] = w_df["answered_correctly"] - w_df[f"target_enc_content_id"]
                 if key not in self.data_dict:
                     self.data_dict[key] = {}
@@ -659,6 +739,9 @@ class CategoryLevelEncoder(FeatureFactory):
             df[f"diff_rate_mean_target_enc_{self.agg_column}_{category}"] = \
                 df[f"user_rate_mean_{self.agg_column}_{category}"] - df[f"target_enc_content_id"]
         return df
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
 
 
 class NUniqueEncoder(FeatureFactory):
@@ -866,10 +949,8 @@ class FeatureFactoryManager:
                 group = df.groupby(column)
             else:
                 raise ValueError
-            import time
             for factory in dicts.values():
                 df = factory.make_feature(df)
-
                 if factory.onebyone == onebyone_mode or is_first_fit:
                     factory.fit(group=group,
                                 feature_factory_dict=self.feature_factory_dict)
