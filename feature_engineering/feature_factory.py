@@ -1,6 +1,7 @@
 from typing import List, Dict, Union, Tuple
 import pandas as pd
 import numpy as np
+import tqdm
 from logging import Logger
 
 class FeatureFactory:
@@ -30,8 +31,7 @@ class FeatureFactory:
         self.make_col_name = f"{self.feature_name_base}_{self.column}"# .replace(" ", "").replace("'", "")
 
     def fit(self,
-            df: pd.DataFrame,
-            key: str,
+            group,
             feature_factory_dict: Dict[Union[str, tuple],
                                        Dict[str, object]]):
         raise NotImplementedError
@@ -87,14 +87,16 @@ class CountEncoder(FeatureFactory):
     feature_name_base = "count_enc"
 
     def fit(self,
-            df: pd.DataFrame,
-            key: str,
+            group,
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
+        w_dict = group.size().to_dict()
+
+        for key, value in w_dict.items():
             if key not in self.data_dict:
-            self.data_dict[key] = len(df)
+                self.data_dict[key] = value
             else:
-            self.data_dict[key] += len(df)
+                self.data_dict[key] += value
 
     def all_predict(self,
                     df: pd.DataFrame):
@@ -133,16 +135,17 @@ class Counter(FeatureFactory):
         self.onebyone = onebyone
 
     def fit(self,
-            df: pd.DataFrame,
-            key: str,
+            group,
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
-        if key not in self.data_dict:
-            self.data_dict[key] = {}
-            for col in self.categories:
-                self.data_dict[key][col] = 0
-        for col, w_df in df.groupby(self.agg_column):
-            self.data_dict[key][col] += len(w_df)
+
+        for key, df in group:
+            if key not in self.data_dict:
+                self.data_dict[key] = {}
+                for col in self.categories:
+                    self.data_dict[key][col] = 0
+            for col, w_df in df.groupby(self.agg_column):
+                self.data_dict[key][col] += len(w_df)
 
     def all_predict(self,
                     df: pd.DataFrame):
@@ -195,35 +198,36 @@ class TargetEncoder(FeatureFactory):
         self.initial_score = initial_score
 
     def fit(self,
-            df: pd.DataFrame,
-            key: str,
+            group,
             feature_factory_dict: Dict[Union[str, tuple],
                                        Dict[str, FeatureFactory]]):
 
         initial_bunshi = self.initial_score * self.initial_weight
-        if key not in self.data_dict:
-            self.data_dict[key] = (df["answered_correctly"].sum() + initial_bunshi)/ (len(df) + self.initial_weight)
-        else:
-            # count_encoderの値は更新済のため、
-            # count = 4, len(df) = 1の場合、もともと3件あって1件が足されたとかんがえる
-            if type(self.column) == list:
-                count = feature_factory_dict[tuple(self.column)]["CountEncoder"].data_dict[key] + self.initial_weight
-            elif type(self.column) == str:
-                count = feature_factory_dict[self.column]["CountEncoder"].data_dict[key] + self.initial_weight
-            else:
-                raise ValueError
-            target_enc = self.data_dict[key]
+        sum_dict = group["answered_correctly"].sum().to_dict()
+        size_dict = group.size().to_dict()
 
-            # パフォーマンス対策:
-            # df["answered_correctly"].sum()
-            ans_sum = df["answered_correctly"].values
-            if len(df) == 1:
-                ans_sum = ans_sum[0]
-            else:
-                ans_sum = ans_sum.sum()
+        for key in sum_dict.keys():
+            w_sum = sum_dict[key]
+            w_size = size_dict[key]
 
-            self.data_dict[key] = \
-                ((count - len(df)) * target_enc + ans_sum) / count
+            if key not in self.data_dict:
+                self.data_dict[key] = (w_sum + initial_bunshi)/ (w_size + self.initial_weight)
+            else:
+                # count_encoderの値は更新済のため、
+                # count = 4, len(df) = 1の場合、もともと3件あって1件が足されたとかんがえる
+                if type(self.column) == list:
+                    count = feature_factory_dict[tuple(self.column)]["CountEncoder"].data_dict[key] + self.initial_weight
+                elif type(self.column) == str:
+                    count = feature_factory_dict[self.column]["CountEncoder"].data_dict[key] + self.initial_weight
+                else:
+                    raise ValueError
+                target_enc = self.data_dict[key]
+
+                # パフォーマンス対策:
+                # df["answered_correctly"].sum()
+
+                self.data_dict[key] = \
+                    ((count - w_size) * target_enc + w_sum) / count
         return self
 
     def all_predict(self,
@@ -257,8 +261,7 @@ class TagsSeparator(FeatureFactory):
         self.onebyone = onebyone
 
     def fit(self,
-            df: pd.DataFrame,
-            key: str,
+            group,
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
         pass
@@ -294,6 +297,94 @@ class TagsSeparator(FeatureFactory):
         return f"{self.__class__.__name__}"
 
 
+class TagsSeparator2(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
+
+    def fit(self,
+            group,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return self._predict(df)
+
+    def _predict(self,
+                 df: pd.DataFrame):
+        tag = df["tags"].str.split(" ", n=10, expand=True)
+        tag.columns = [f"tags{i}" for i in range(1, len(tag.columns) + 1)]
+        tags = np.arange(1, 188)
+        for col in tag.columns:
+            tag[col] = pd.to_numeric(tag[col], errors='coerce').fillna(-1).astype("uint8")
+
+        for t in tags:
+            df[f"tag_{t}"] = (tag == t).sum(axis=1).astype("uint8")
+        return df
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"tags_all")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+class PartSeparator(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
+
+    def fit(self,
+            group,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return self._predict(df)
+
+    def _predict(self,
+                 df: pd.DataFrame):
+
+        for i in [1, 2, 3, 4, 5, 6, 7]:
+            df[f"part{i}"] = (df["part"] == i).astype("int8")
+        return df
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"tags_all")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+
 
 class TargetEncodeVsUserId(FeatureFactory):
     feature_name_base = ""
@@ -307,8 +398,7 @@ class TargetEncodeVsUserId(FeatureFactory):
         self.onebyone = onebyone
 
     def fit(self,
-            df: pd.DataFrame,
-            key: str,
+            group,
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
         pass
@@ -346,7 +436,7 @@ class MeanAggregator(FeatureFactory):
     feature_name_base = "mean"
 
     def __init__(self,
-                 column: str,
+                 column: Union[str, list],
                  agg_column: str,
                  remove_now: bool,
                  logger: Union[Logger, None] =None,
@@ -361,19 +451,23 @@ class MeanAggregator(FeatureFactory):
         self.make_col_name = f"{self.feature_name_base}_{self.agg_column}_by_{self.column}"
 
     def fit(self,
-            df: pd.DataFrame,
-            key: str,
+            group,
             feature_factory_dict: Dict[Union[str, tuple],
                                        Dict[str, FeatureFactory]]):
-        if key not in self.data_dict:
-            self.data_dict[key] = df[self.agg_column].sum() / len(df)
-        else:
-            # count_encoderの値は更新済のため、
-            # count = 4, len(df) = 1の場合、もともと3件あって1件が足されたとかんがえる
-            count = feature_factory_dict[self.column]["CountEncoder"].data_dict[key]
-            target_enc = self.data_dict[key]
-            self.data_dict[key] = \
-                ((count - len(df)) * target_enc + df[self.agg_column].values.sum()) / count
+        sum_dict = group[self.agg_column].sum().to_dict()
+        size_dict = group[self.agg_column].size().to_dict()
+        for key in sum_dict.keys():
+            sum_ = sum_dict[key]
+            size_ = size_dict[key]
+            if key not in self.data_dict:
+                self.data_dict[key] = sum_ / size_
+            else:
+                # count_encoderの値は更新済のため、
+                # count = 4, len(df) = 1の場合、もともと3件あって1件が足されたとかんがえる
+                count = feature_factory_dict[self.column]["CountEncoder"].data_dict[key]
+                target_enc = self.data_dict[key]
+                self.data_dict[key] = \
+                    ((count - size_) * target_enc + sum_) / count
         return self
 
     def all_predict(self,
@@ -397,66 +491,6 @@ class MeanAggregator(FeatureFactory):
         return df
 
 
-class UserLevelEncoder(FeatureFactory):
-    feature_name_base = "user_level"
-    def __init__(self,
-                 initial_score: float =.0,
-                 initial_weight: float = 0,
-                 logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
-        self.column = "user_id"
-        self.initial_score = initial_score
-        self.initial_weight = initial_weight
-        self.logger = logger
-        self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
-        self.data_dict = {}
-        self.make_col_name = f"{self.feature_name_base}"
-
-    def fit(self,
-            df: pd.DataFrame,
-            key: str,
-            feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
-        initial_bunshi = self.initial_score * self.initial_weight
-        if key not in self.data_dict:
-            self.data_dict[key] = (df["target_enc_content_id"].sum() + initial_bunshi) / (len(df) + self.initial_weight)
-        else:
-            # count_encoderの値は更新済のため、
-            # count = 4, len(df) = 1の場合、もともと3件あって1件が足されたとかんがえる
-            target_enc = self.data_dict[key]
-            count = feature_factory_dict["user_id"]["CountEncoder"].data_dict[key] + self.initial_weight
-
-            # パフォーマンス対策:
-            # df["answered_correctly"].sum()
-            ans_sum = df["target_enc_content_id"].values
-            if len(df) == 1:
-                ans_sum = ans_sum[0]
-            else:
-                ans_sum = ans_sum.sum()
-            self.data_dict[key] = ((count - len(df)) * target_enc + ans_sum) / count
-        return self
-
-    def all_predict(self,
-                    df: pd.DataFrame):
-        def f(series):
-            return (series.cumsum() + self.initial_weight * self.initial_score) / (np.arange(len(series)) + 1 + self.initial_weight)
-
-        df["user_level"] = df.groupby("user_id")["target_enc_content_id"].transform(f).astype("float32")
-        df["diff_user_level"] = df[self.make_col_name] - df["target_enc_content_id"]
-        return df
-
-    def partial_predict(self,
-                        df: pd.DataFrame):
-        df = self._partial_predict(df)
-        df[self.make_col_name] = df[self.make_col_name].astype("float32")
-        df["diff_user_level"] = df[self.make_col_name] - df["target_enc_content_id"]
-        if self.initial_weight > 0:
-            df[self.make_col_name] = df[self.make_col_name].fillna(self.initial_score)
-        return df
-
-
 class UserLevelEncoder2(FeatureFactory):
     def __init__(self,
                  vs_column: str,
@@ -475,32 +509,32 @@ class UserLevelEncoder2(FeatureFactory):
         self.data_dict = {}
 
     def fit(self,
-            df: pd.DataFrame,
-            key: str,
+            group,
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
         initial_bunshi = self.initial_score * self.initial_weight
 
-        df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]
-        if key not in self.data_dict:
-            self.data_dict[key] = {}
-            self.data_dict[key][f"user_level_{self.vs_column}"] = (df["target_enc_content_id"].sum() + initial_bunshi) / (len(df) + self.initial_weight)
-            self.data_dict[key][f"user_rate_sum_{self.vs_column}"] = df["rate"].sum()
-            self.data_dict[key][f"user_rate_mean_{self.vs_column}"] = df["rate"].mean()
-        else:
-            user_level = self.data_dict[key][f"user_level_{self.vs_column}"]
-            user_rate_sum = self.data_dict[key][f"user_rate_sum_{self.vs_column}"]
+        for key, df in group:
+            df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]
+            if key not in self.data_dict:
+                self.data_dict[key] = {}
+                self.data_dict[key][f"user_level_{self.vs_column}"] = (df[f"target_enc_{self.vs_column}"].sum() + initial_bunshi) / (len(df) + self.initial_weight)
+                self.data_dict[key][f"user_rate_sum_{self.vs_column}"] = df["rate"].sum()
+                self.data_dict[key][f"user_rate_mean_{self.vs_column}"] = df["rate"].mean()
+            else:
+                user_level = self.data_dict[key][f"user_level_{self.vs_column}"]
+                user_rate_sum = self.data_dict[key][f"user_rate_sum_{self.vs_column}"]
 
-            count = feature_factory_dict["user_id"]["CountEncoder"].data_dict[key] + self.initial_weight
+                count = feature_factory_dict["user_id"]["CountEncoder"].data_dict[key] + self.initial_weight
 
-            # パフォーマンス対策:
-            # df["answered_correctly"].sum()
-            ans_sum = df["target_enc_content_id"].sum()
-            rate_sum = df["rate"].sum()
+                # パフォーマンス対策:
+                # df["answered_correctly"].sum()
+                ans_sum = df["target_enc_content_id"].sum()
+                rate_sum = df["rate"].sum()
 
-            self.data_dict[key][f"user_level_{self.vs_column}"] = ((count - len(df)) * user_level + ans_sum) / count
-            self.data_dict[key][f"user_rate_sum_{self.vs_column}"] = user_rate_sum + rate_sum
-            self.data_dict[key][f"user_rate_mean_{self.vs_column}"] = (user_rate_sum + rate_sum) / count
+                self.data_dict[key][f"user_level_{self.vs_column}"] = ((count - len(df)) * user_level + ans_sum) / count
+                self.data_dict[key][f"user_rate_sum_{self.vs_column}"] = user_rate_sum + rate_sum
+                self.data_dict[key][f"user_rate_mean_{self.vs_column}"] = (user_rate_sum + rate_sum) / count
         return self
 
     def all_predict(self,
@@ -517,7 +551,7 @@ class UserLevelEncoder2(FeatureFactory):
         df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]
         df[f"user_rate_sum_{self.vs_column}"] = df.groupby("user_id")["rate"].transform(f_shift1_sum).astype("float32")
         df[f"user_rate_mean_{self.vs_column}"] = df.groupby("user_id")["rate"].transform(f_shift1_mean).astype("float32")
-        df[f"user_level_{self.vs_column}"] = df.groupby("user_id")["target_enc_content_id"].transform(f).astype("float32")
+        df[f"user_level_{self.vs_column}"] = df.groupby("user_id")[f"target_enc_{self.vs_column}"].transform(f).astype("float32")
         df[f"diff_user_level_target_enc_{self.vs_column}"] = \
             df[f"user_level_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]
         df[f"diff_rate_mean_target_emc_{self.vs_column}"] = \
@@ -539,6 +573,94 @@ class UserLevelEncoder2(FeatureFactory):
             (df[f"user_rate_mean_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]).astype("float32")
         return df
 
+
+class CategoryLevelEncoder(FeatureFactory):
+    def __init__(self,
+                 groupby_column: str,
+                 agg_column: str,
+                 categories: list,
+                 split_num: int = 1,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
+        self.groupby_column = groupby_column
+        self.agg_column = agg_column
+        self.categories = categories
+        self.logger = logger
+        self.split_num = split_num
+        self.data_dict = {}
+        self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
+
+
+    def fit(self,
+            group,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        for key, df in group[["answered_correctly", "content_id"]]:
+            for category in self.categories:
+                w_df = df[df[self.agg_column] == category]
+                if len(w_df) == 0:
+                    continue
+
+                w_df["rate"] = w_df["answered_correctly"] - w_df[f"target_enc_content_id"]
+                if key not in self.data_dict:
+                    self.data_dict[key] = {}
+                    self.data_dict[key][f"count_{self.agg_column}_{category}"] = len(w_df)
+                    self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"] = w_df["rate"].sum()
+                    self.data_dict[key][f"user_rate_mean_{self.agg_column}_{category}"] = w_df["rate"].mean()
+                elif f"user_rate_sum_{self.agg_column}_{category}" not in self.data_dict[key]:
+                    self.data_dict[key][f"count_{self.agg_column}_{category}"] = len(w_df)
+                    self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"] = w_df["rate"].sum()
+                    self.data_dict[key][f"user_rate_mean_{self.agg_column}_{category}"] = w_df["rate"].mean()
+                else:
+                    self.data_dict[key][f"count_{self.agg_column}_{category}"] += len(w_df)
+                    user_rate_sum = self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"]
+
+                    count = self.data_dict[key][f"count_{self.agg_column}_{category}"]
+
+                    rate_sum = w_df["rate"].sum()
+
+                    self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"] = user_rate_sum + rate_sum
+                    self.data_dict[key][f"user_rate_mean_{self.agg_column}_{category}"] = (user_rate_sum + rate_sum) / count
+        return self
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        def f_shift1_sum(series):
+            return series.shift(1).cumsum()
+
+        for category in self.categories:
+            df["is_target"] = (df[self.agg_column] == category).astype("uint8")
+            df["rate"] = (df["answered_correctly"] - df[f"target_enc_content_id"]).fillna(0) * df["is_target"]
+            df["size"] = df.groupby("user_id")["is_target"].cumsum().shift(1)
+            df[f"user_rate_sum_{self.agg_column}_{category}"] = df.groupby("user_id")["rate"].transform(f_shift1_sum).astype("float32")
+            df[f"user_rate_mean_{self.agg_column}_{category}"] = (df[f"user_rate_sum_{self.agg_column}_{category}"] / df["size"]).astype("float32")
+            df[f"diff_rate_mean_target_enc_{self.agg_column}_{category}"] = \
+                df[f"user_rate_mean_{self.agg_column}_{category}"] - df[f"target_enc_content_id"]
+
+        df = df.drop(["rate", "is_target", "size"], axis=1)
+        return df
+
+    def _partial_predict2(self,
+                          df: pd.DataFrame,
+                          column: str):
+        df[column] = [self.data_dict[x][column] if x in self.data_dict else np.nan
+                      for x in df[self.groupby_column].values]
+        df[column] = df[column].astype("float32")
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        for category in self.categories:
+            for col in [f"user_rate_sum_{self.agg_column}_{category}",
+                        f"user_rate_mean_{self.agg_column}_{category}"]:
+                df = self._partial_predict2(df, column=col)
+            df[f"diff_rate_mean_target_enc_{self.agg_column}_{category}"] = \
+                df[f"user_rate_mean_{self.agg_column}_{category}"] - df[f"target_enc_content_id"]
+        return df
+
+
 class NUniqueEncoder(FeatureFactory):
     feature_name_base = ""
 
@@ -557,21 +679,20 @@ class NUniqueEncoder(FeatureFactory):
         self.data_dict = {}
 
     def fit(self,
-            df: pd.DataFrame,
-            key: str,
+            group,
             feature_factory_dict: Dict[Union[str, tuple],
                                        Dict[str, object]]):
 
-        # TODO:
         if len(self.data_dict) == 0:
-            self.data_dict[key] = df[self.column].drop_duplicates().values.tolist()
+            self.data_dict = group.nunique().to_dict()
             return self
-        for column in df[self.column].drop_duplicates().values:
-            if key not in self.data_dict:
-                self.data_dict[key] = [column]
-            else:
-                if column not in self.data_dict[key]:
-                    self.data_dict[key].append(column)
+        for key, df in group:
+            for column in df[self.column].drop_duplicates().values:
+                if key not in self.data_dict:
+                    self.data_dict[key] = [column]
+                else:
+                    if column not in self.data_dict[key]:
+                        self.data_dict[key].append(column)
         return self
 
     def all_predict(self,
@@ -621,11 +742,14 @@ class ShiftDiffEncoder(FeatureFactory):
         self.data_dict = {}
 
     def fit(self,
-            df: pd.DataFrame,
-            key: str,
+            group,
             feature_factory_dict: Dict[Union[str, tuple],
                                        Dict[str, object]]):
-        self.data_dict[key] = df[self.column].iloc[-1]
+        if len(self.data_dict) == 0:
+            self.data_dict = group[self.column].last().to_dict()
+        else:
+            for key, df in group:
+                self.data_dict[key] = df[self.column].iloc[-1]
         return self
 
     def all_predict(self,
@@ -669,11 +793,14 @@ class PreviousAnswer(FeatureFactory):
     feature_name_base = "previous_answer"
 
     def fit(self,
-            df: pd.DataFrame,
-            key: str,
+            group,
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
-        self.data_dict[key] = df["answered_correctly"].iloc[-1]
+
+        last_dict = group["answered_correctly"].last().to_dict()
+        for key, value in last_dict.items():
+            self.data_dict[key] = value
+        return self
 
     def all_predict(self,
                     df: pd.DataFrame):
@@ -719,7 +846,6 @@ class FeatureFactoryManager:
 
     def fit(self,
             df: pd.DataFrame,
-            partial_predict_mode: bool = False,
             onebyone_mode: bool = False,
             is_first_fit: bool = False):
         """
@@ -741,18 +867,12 @@ class FeatureFactoryManager:
             else:
                 raise ValueError
             import time
-            t = time.time()
-            for key, w_df in group:
-                # カラムのキー(ex. user_id=20000)ごとに処理
-                for factory in dicts.values():
-                    if factory.onebyone == onebyone_mode or is_first_fit:
-                        factory.fit(df=w_df,
-                                    key=key,
-                                    feature_factory_dict=self.feature_factory_dict)
             for factory in dicts.values():
                 df = factory.make_feature(df)
 
-            for factory in dicts.values():
+                if factory.onebyone == onebyone_mode or is_first_fit:
+                    factory.fit(group=group,
+                                feature_factory_dict=self.feature_factory_dict)
                 if factory.is_partial_fit:
                     if not is_first_fit:
                         df = factory.partial_predict(df)

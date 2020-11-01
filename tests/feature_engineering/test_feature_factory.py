@@ -7,12 +7,12 @@ from feature_engineering.feature_factory import \
     CountEncoder, \
     TargetEncoder, \
     MeanAggregator, \
-    UserLevelEncoder, \
     UserLevelEncoder2, \
     NUniqueEncoder, \
     ShiftDiffEncoder, \
     Counter, \
-    PreviousAnswer
+    PreviousAnswer, \
+    CategoryLevelEncoder
 from experiment.common import get_logger
 
 class PartialAggregatorTestCase(unittest.TestCase):
@@ -250,100 +250,6 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         self.assertEqual(expect, agger.feature_factory_dict["key1"]["TargetEncoder"].data_dict)
 
-
-    def test_fit_user_level(self):
-        """
-        user_level
-        :return:
-        """
-        logger = get_logger()
-        feature_factory_dict = {
-            "content_id": {
-                "CountEncoder": CountEncoder(column="content_id",
-                                             is_partial_fit=True),
-                "TargetEncoder": TargetEncoder(column="content_id",
-                                               initial_weight=10,
-                                               initial_score=0.5,
-                                               is_partial_fit=True)},
-            "user_id": {
-                "CountEncoder": CountEncoder(column="user_id"),
-                "TargetEncoder": TargetEncoder(column="user_id",
-                                               initial_weight=10,
-                                               initial_score=0.5),
-                "UserLevelEncoder": UserLevelEncoder(initial_weight=10,
-                                                     initial_score=0.5)}
-        }
-        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
-                                      logger=logger)
-
-        df = pd.DataFrame({"user_id": ["a", "b", "b", "c", "c"],
-                           "content_id": ["x", "x", "x", "y", "y"],
-                           "answered_correctly": [0, 0, 1, 0, 1]})
-
-        # predict_all
-        # <default> target_enc_content_id mean([0.5] * 10) = 0.5 なので, user_levelは0.5
-        # user_id=a, content_id=x, answered_correctly=1が入ると
-        # xのtarget_enc_content_id = mean([0.5] * 10 + [1]) = 6/11.
-        # aのuser_level = mean([0.5]*10 + 6/11) に更新される
-
-        df_expect = pd.DataFrame({"user_id": ["a", "b", "b", "c", "c"],
-                                  "content_id": ["x", "x", "x", "y", "y"],
-                                  "user_level": [0.5,
-                                                 np.array([0.5]*10 + [5/11]).astype("float32").mean(),
-                                                 np.array([0.5]*10 + [5/11] + [5/12]).astype("float32").mean(),
-                                                 0.5,
-                                                 np.array([0.5]*10 + [5/10] + [5/11]).astype("float32").mean()]})
-        df_expect["user_level"] = df_expect["user_level"].astype("float32")
-        df_actual = agger.all_predict(df)
-        pd.set_option("max_columns", 100)
-        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
-
-        # fit
-        df = pd.DataFrame({"user_id": ["a", "b", "b", "c", "c"],
-                           "content_id": ["x", "x", "x", "y", "y"],
-                           "answered_correctly": [0, 0, 1, 0, 1]})
-
-        agger.fit(df, partial_predict_mode=True)
-        a = np.array([0.5]*10 + [6/13]).mean()
-        b = np.array([0.5]*10 + [6/13] + [6/13]).mean()
-        c = np.array([0.5]*10 + [6/12] + [6/12]).mean()
-        expect = {"a": a,
-                  "b": b,
-                  "c": c}
-        actual = agger.feature_factory_dict["user_id"]["UserLevelEncoder"].data_dict
-
-        for k, v in expect.items():
-            expect[k] = np.float32(np.round(v, 5))
-        for k, v in actual.items():
-            actual[k] = np.float32(np.round(v, 5))
-        self.assertEqual(expect, actual)
-
-        # partial predict
-        df_test = pd.DataFrame({"user_id": ["a", "b", "d"],
-                                "content_id": ["x", "y", "z"]})
-        df_expect = pd.DataFrame({"user_id": ["a", "b", "d"],
-                                  "user_level": [a, b, 0.5]})
-        df_expect["user_level"] = df_expect["user_level"].astype("float32")
-        df_actual = agger.partial_predict(df_test)
-        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
-
-        # partial fit
-        df_partial = pd.DataFrame({"user_id": ["a", "d"],
-                                   "content_id": ["x", "z"],
-                                   "answered_correctly": [0, 0]})
-
-        agger.fit(df_partial, partial_predict_mode=True)
-        expect = {"a": np.array([0.5]*10 + [6/13] + [6/14]).mean(),
-                  "b": b,
-                  "c": c,
-                  "d": np.array([0.5]*10 + [5/11]).mean()}
-        for k, v in expect.items():
-            expect[k] = np.float32(np.round(v, 5))
-        for k, v in actual.items():
-            actual[k] = np.float32(np.round(v, 5))
-
-        self.assertEqual(expect, agger.feature_factory_dict["user_id"]["UserLevelEncoder"].data_dict)
-
     def test_fit_user_level2(self):
         """
         user_level
@@ -402,7 +308,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         # fit - partial-predict
         for i in range(len(df)):
-            agger.fit(df.iloc[i:i+1], partial_predict_mode=True)
+            agger.fit(df.iloc[i:i+1])
 
         # partial predict
         df_test = pd.DataFrame({"content_id": ["a", "a", "b", "b"],
@@ -563,7 +469,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         # fit - partial-predict
         for i in range(len(df)):
-            agger.fit(df.iloc[i:i+1], partial_predict_mode=True)
+            agger.fit(df.iloc[i:i+1])
 
         # partial predict
         df_test = pd.DataFrame({"user_id": ["x", "y"],
@@ -578,7 +484,6 @@ class PartialAggregatorTestCase(unittest.TestCase):
                                   "groupby_user_id_col1_3_count_ratio": [0, 2/3]})
 
         df_actual = agger.partial_predict(df_test)
-        print(df_actual)
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns],
                                       check_dtype=False)
 
@@ -621,6 +526,88 @@ class PartialAggregatorTestCase(unittest.TestCase):
         df_actual = agger.partial_predict(df_test)
 
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+
+    def test_fit_levelencoder(self):
+        """
+        user_level
+        :return:
+        """
+        logger = get_logger()
+        feature_factory_dict = {
+            "content_id": {
+                "CountEncoder": CountEncoder(column="content_id"),
+                "TargetEncoder": TargetEncoder(column="content_id", is_partial_fit=True)
+            },
+            "user_id": {
+                "CountEncoder": CountEncoder(column="user_id"),
+                "CategoryLevelEncoder": CategoryLevelEncoder(groupby_column="user_id",
+                                                             agg_column="col1",
+                                                             categories=["1", "2", "3"])
+            }
+        }
+
+        df = pd.DataFrame({"user_id": ["x"]*6 + ["y"]*3,
+                           "content_id": ["a"]*3 + ["b"]*6,
+                           "col1": ["1", "2", "3"] * 3,
+                           "answered_correctly": [0, 0, 1,
+                                                  1, 0, 0,
+                                                  1, 1, 0]})
+
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        rate = np.array(
+            [np.nan, 0, 1/2,
+             np.nan, -1, -1/2,
+             2/3, 2/4, -3/5]
+        )
+
+        df_expect = pd.DataFrame(
+            {"user_rate_sum_col1_1": [np.nan, 0, 0,
+                                      0, 0, 0,
+                                      np.nan, 2/3, 2/3],
+             "user_rate_mean_col1_1": [np.nan, 0, 0,
+                                       0, 0, 0,
+                                       np.nan, 2/3, 2/3],
+             "user_rate_sum_col1_2": [np.nan, 0, 0,
+                                      0, 0, -1,
+                                      np.nan, 0, 2/4],
+             "user_rate_mean_col1_2": [np.nan, np.nan, 0,
+                                       0, 0, -1/2,
+                                       np.nan, np.nan, 2/4],
+             "user_rate_sum_col1_3": [np.nan, 0, 0,
+                                      1, 1, 1,
+                                      np.nan, 0, 0],
+             "user_rate_mean_col1_3": [np.nan, np.nan, np.nan,
+                                       1, 1, 1,
+                                       np.nan, np.nan, np.nan]
+             }
+        )
+        df_actual = agger.all_predict(df)
+        df_expect = df_expect.astype("float32")
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        df_test = pd.DataFrame({"user_id": ["x", "y", "z"],
+                                "content_id": ["a", "c", "c"]})
+
+        df_expect = pd.DataFrame(
+            {"user_rate_sum_col1_1": [0, 2/4, np.nan],
+             "user_rate_mean_col1_1": [0, 2/4, np.nan],
+             "user_rate_sum_col1_2": [0-1/2, 2/5, np.nan],
+             "user_rate_mean_col1_2": [-1/2/2, 2/5, np.nan],
+             "user_rate_sum_col1_3": [2/3-1/3, -3/6, np.nan],
+             "user_rate_mean_col1_3": [1/3/2, -3/6, np.nan]
+             }
+        )
+        df_expect = df_expect.astype("float32")
+
+        df_actual = agger.partial_predict(df_test)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
 
 if __name__ == "__main__":
     unittest.main()
