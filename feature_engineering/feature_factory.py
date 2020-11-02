@@ -426,7 +426,51 @@ class UserCountBinningEncoder(FeatureFactory):
     def __repr__(self):
         return f"{self.__class__.__name__}"
 
+
+
+class PriorQuestionElapsedTimeDiv10Encoder(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 onebyone: bool = False):
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.onebyone = onebyone
+
+    def fit(self,
+            group,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return self._predict(df)
+
+    def _predict(self,
+                 df: pd.DataFrame):
+
+        df["prior_question_elapsed_time_div10"] = df["prior_question_elapsed_time"] % 10
+        return df
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"tags_all")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+
 class PriorQuestionElapsedTimeBinningEncoder(FeatureFactory):
+
     feature_name_base = ""
 
     def __init__(self,
@@ -576,7 +620,7 @@ class MeanAggregator(FeatureFactory):
 
 class UserLevelEncoder2(FeatureFactory):
     def __init__(self,
-                 vs_column: str,
+                 vs_column: Union[str, list],
                  initial_score: float =.0,
                  initial_weight: float = 0,
                  logger: Union[Logger, None] = None,
@@ -612,7 +656,7 @@ class UserLevelEncoder2(FeatureFactory):
 
                 # パフォーマンス対策:
                 # df["answered_correctly"].sum()
-                ans_sum = df["target_enc_content_id"].sum()
+                ans_sum = df[f"target_enc_{self.vs_column}"].sum()
                 rate_sum = df["rate"].sum()
 
                 self.data_dict[key][f"user_level_{self.vs_column}"] = ((count - len(df)) * user_level + ans_sum) / count
@@ -665,7 +709,8 @@ class CategoryLevelEncoder(FeatureFactory):
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 onebyone: bool = False,
+                 vs_columns: Union[str, list] = "content_id"):
         self.groupby_column = groupby_column
         self.agg_column = agg_column
         self.categories = categories
@@ -674,16 +719,17 @@ class CategoryLevelEncoder(FeatureFactory):
         self.data_dict = {}
         self.is_partial_fit = is_partial_fit
         self.onebyone = onebyone
+        self.vs_columns = vs_columns
 
 
     def fit(self,
             group,
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
-        for key, df in group[["answered_correctly", "content_id"]]:
+        for key, df in group:
             for category in self.categories:
                 w_df = df[df[self.agg_column] == category]
-                w_df["rate"] = w_df["answered_correctly"] - w_df[f"target_enc_content_id"]
+                w_df["rate"] = w_df["answered_correctly"] - w_df[f"target_enc_{self.vs_columns}"]
                 if key not in self.data_dict:
                     self.data_dict[key] = {}
                     self.data_dict[key][f"count_{self.agg_column}_{category}"] = len(w_df)
@@ -712,12 +758,12 @@ class CategoryLevelEncoder(FeatureFactory):
 
         for category in self.categories:
             df["is_target"] = (df[self.agg_column] == category).astype("uint8")
-            df["rate"] = (df["answered_correctly"] - df[f"target_enc_content_id"]).fillna(0) * df["is_target"]
+            df["rate"] = (df["answered_correctly"] - df[f"target_enc_{self.vs_columns}"]).fillna(0) * df["is_target"]
             df["size"] = df.groupby("user_id")["is_target"].cumsum().shift(1)
             df[f"user_rate_sum_{self.agg_column}_{category}"] = df.groupby("user_id")["rate"].transform(f_shift1_sum).astype("float32")
             df[f"user_rate_mean_{self.agg_column}_{category}"] = (df[f"user_rate_sum_{self.agg_column}_{category}"] / df["size"]).astype("float32")
             df[f"diff_rate_mean_target_enc_{self.agg_column}_{category}"] = \
-                df[f"user_rate_mean_{self.agg_column}_{category}"] - df[f"target_enc_content_id"]
+                df[f"user_rate_mean_{self.agg_column}_{category}"] - df[f"target_enc_{self.vs_columns}"]
 
         df = df.drop(["rate", "is_target", "size"], axis=1)
         return df
@@ -737,7 +783,7 @@ class CategoryLevelEncoder(FeatureFactory):
                         f"user_rate_mean_{self.agg_column}_{category}"]:
                 df = self._partial_predict2(df, column=col)
             df[f"diff_rate_mean_target_enc_{self.agg_column}_{category}"] = \
-                df[f"user_rate_mean_{self.agg_column}_{category}"] - df[f"target_enc_content_id"]
+                df[f"user_rate_mean_{self.agg_column}_{category}"] - df[f"target_enc_{self.vs_columns}"]
         return df
     def __repr__(self):
         return f"{self.__class__.__name__}"
