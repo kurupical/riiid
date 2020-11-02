@@ -139,5 +139,102 @@
 
 # 2020/10/27
 ## experiment
-* exp029: 各target_encをuser_idのtarget_encとぶつける
+* exp029: 各target_encをuser_idのtarget_encとぶつける -> CVかわらず
+
+# 2020/10/28
+## experiment
+* exp030: user_levelに再トライ -> 1modelのみでいったんsub
+* exp031: counter(その時点までに何回該当カテゴリを通っているか?)
+
+# 2020/10/29
+* exp032: user_levelだけにしてpartial_predictとall_predict比較
+-> ![image_12](image_12.png)
+-> LB: 0.766!
+* そのまま、exp031と同条件で、partial vs all での精度を比較
+
+# 2020/10/30
+## EDA
+* 過去にこのユーザーが同じquestionを解いたか
+![image_13](image_13.png)
+
+## experiment
+* exp033: exp031 + 1個前の解答 (とりあえず生コードで）-> CV: 0.772
+* だけどメモリーエラー…
+
+# 2020/10/31
+## experiment
+* exp034: shiftdiff(content_id)! (直近が同じか?) -> あんまり変わらず
+* exp035: exp030と同じ特徴量、CountEncoderのバグ修正したやつ
+* exp036
+  * content_type_idのtarget_encodingは不要
+  * partはtarget_encoding, level必要
+  * {prior_question_had_explanation, correct_answer}
+  * {prior_question_had_explanation, part}
+* exp037
+  * tag全部もり(subは流石に無理そうなので無し)
+## EDA
+* 011_user_answer
+  * correct_answerのバランス悪いのなんでだろう
+    * ![image_14](image_14.png)
+  * exp036に、{prior_question_had_explanation, correct_answer}を加える
+
+* 012_prior_question
+  * partとぶつける
+    * ![image_16](image_16.png)
+  * exp036に、{prior_question_had_explanation, part}を加える
+
+* 013_bundle_id
+  * 特になし。。
+
+* 014_part
+  * part vs 時間diffで相関あるか？ -> part7は結構顕著に出てる
+    * ![image_17](image_17.png)
+    * exp036に、groupby("part")["time"].mean()
+  * partごとのtarget平均
+    * ![image_18](image_18.png)
+  * user_id/partごとの正解率相関
+    * ![image_19](image_19.png)
+    * ![image_20](image_20.png)
+
+# 2020/11/1
+## experiment
+* ex_036: CV: 0.771 LB: 0.775!!
+* ex_038
+  * max_bin=1024 -> そんなに変わらない
+  * feature_fraction=0.1
+* ex_037(tag全部もり) -> あんまりスコア変わらない
+* ex_039
+  * count_bin追加, partごと/count_binごとのCategoryLevelEncoder
+  * diff_rate_mean_target_enc_part_1が強い。part1なんか大事そう
+* ex_040
+  * prior_question+user_count_bin, content_id+prior_question_had_explanation
+  * part+prior_question_elapsed_time_bin
+
+## eda
+* 016_user_id
+  * ![image_21](image_21.png)
+  * prior_question_had_explanationは、最初のほうが顕著に正解率下がる
+    * ![image_22](image_22.png)
+* 017_prior_question_elapsed_time
+  * partごとに、かけた時間と正解率が違う。確かに、文法なんかはわかったら一瞬
+
+# 2020/11/2
+## experiment
+* ex_039はtimeup
+  * CategoryLevelEncoderが時間食ってる(あたりまえ)
+* ex_041
+  * CategoryLevel: part=(2, 5), bin=(0)
+  * pickle化も同時にやる
+* ex_042
+  * base_ex041
+  * LevelEncoder系、全部[content_id, prior_question_had_explanation]にする
+* ex_043
+  * base_ex_042
+  * PriorQuestionElapsedTimeDiv10Encoder
+
+## EDA
+* 018_prior_question_time
+  * 10で割ったら…
+  * ![image_23](image_23.png)
+
 </div>
