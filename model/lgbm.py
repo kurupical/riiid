@@ -56,16 +56,18 @@ def train_lgbm_cv(df: pd.DataFrame,
                   model_id: int,
                   exp_name: str,
                   drop_user_id: bool,
-                  experiment_id: int=0):
+                  experiment_id: int=0,
+                  is_debug: bool=False):
 
-    mlflow.start_run(experiment_id=experiment_id, run_name=exp_name)
+    if not is_debug:
+        mlflow.start_run(experiment_id=experiment_id, run_name=exp_name)
 
-    mlflow.log_param("model_id", model_id)
-    mlflow.log_param("count_row", len(df))
-    mlflow.log_param("count_column", len(df.columns))
+        mlflow.log_param("model_id", model_id)
+        mlflow.log_param("count_row", len(df))
+        mlflow.log_param("count_column", len(df.columns))
 
-    for key, value in params.items():
-        mlflow.log_param(key, value)
+        for key, value in params.items():
+            mlflow.log_param(key, value)
     if drop_user_id:
         features = [x for x in df.columns if x not in ["answered_correctly", "user_id"]]
     else:
@@ -94,9 +96,11 @@ def train_lgbm_cv(df: pd.DataFrame,
         valid_sets=[train_data, valid_data],
         verbose_eval=100
     )
-    mlflow.log_metric("auc_train", model.best_score["training"]["auc"])
-    mlflow.log_metric("auc_val", model.best_score["valid_1"]["auc"])
     y_oof = model.predict(df.loc[val_idx][features])
+    if not is_debug:
+        mlflow.log_metric("auc_train", model.best_score["training"]["auc"])
+        mlflow.log_metric("auc_val", model.best_score["valid_1"]["auc"])
+        mlflow.end_run()
 
     df_imp["importance"] = model.feature_importance("gain") / model.feature_importance("gain").sum()
     df_imp.sort_values("importance", ascending=False).to_csv(f"{output_dir}/imp_{model_id}.csv")
@@ -109,8 +113,6 @@ def train_lgbm_cv(df: pd.DataFrame,
     df_oof["target"] = df.loc[val_idx]["answered_correctly"]
 
     df_oof.to_csv(f"{output_dir}/oof_{model_id}.csv", index=False)
-
-    mlflow.end_run()
 
 
 def train_lgbm_cv_newuser(df: pd.DataFrame,

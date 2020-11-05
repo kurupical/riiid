@@ -222,19 +222,28 @@
 ## experiment
 * ex_039はtimeup
   * CategoryLevelEncoderが時間食ってる(あたりまえ)
-* ex_041
+* ex_041 -> CV: 0.771 / LB: 0.777
   * CategoryLevel: part=(2, 5), bin=(0)
   * pickle化も同時にやる
-* ex_042
+* ex_042 -> model1: CV0.768をみて撤退
   * base_ex041
   * LevelEncoder系、全部[content_id, prior_question_had_explanation]にする
-* ex_043
-  * base_ex_042
-  * PriorQuestionElapsedTimeDiv10Encoder
+* ex_043 ->
+  * base_ex_041
+  * PriorQuestionElapsedTimeDiv10Encoder -> ほとんどfeatureimporance0
 
 ## EDA
 * 018_prior_question_time
   * 10で割ったら…
   * ![image_23](image_23.png)
 
+# 2020/11/3
+## experiment
+* ex_046: hyperparam tuning
+
+# 2020/11/4
+## experiment
+* ex_047: parameter tuned & lr=0.1
+* ex_048: previous_answer(reduce memory)
+* ex_049: reduce features
 </div>

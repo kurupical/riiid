@@ -921,6 +921,8 @@ class ShiftDiffEncoder(FeatureFactory):
 class PreviousAnswer(FeatureFactory):
     feature_name_base = "previous_answer"
 
+    def _make_key(self, x):
+        return (x[0]+1) * (x[1]+1)
     def fit(self,
             group,
             feature_factory_dict: Dict[str,
@@ -928,7 +930,7 @@ class PreviousAnswer(FeatureFactory):
 
         last_dict = group["answered_correctly"].last().to_dict()
         for key, value in last_dict.items():
-            self.data_dict[key] = value
+            self.data_dict[self._make_key(key)] = value
         return self
 
     def all_predict(self,
@@ -940,7 +942,55 @@ class PreviousAnswer(FeatureFactory):
 
     def partial_predict(self,
                         df: pd.DataFrame):
-        df = self._partial_predict(df)
+        def f(x):
+            return (x[0]+1)*(x[1]+1)
+        df[self.make_col_name] = [self.data_dict[self._make_key(x)] if self._make_key(x) in self.data_dict else np.nan
+                                  for x in df[self.column].values]
+        df[self.make_col_name] = df[self.make_col_name].fillna(-99).astype("int8")
+        return df
+
+class PreviousAnswer2(FeatureFactory):
+    feature_name_base = "previous_answer"
+
+    def fit(self,
+            group,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+
+        for key, w_df in group[["content_id", "answered_correctly"]]:
+            user_id = key[0]
+            if user_id not in self.data_dict:
+                self.data_dict[user_id] = {}
+                self.data_dict[user_id]["content_id"] = w_df["content_id"].values.tolist()
+                self.data_dict[user_id]["answered_correctly"] = w_df["answered_correctly"].values.tolist()
+            else:
+                self.data_dict[user_id]["content_id"].extend(w_df["content_id"].values.tolist())
+                self.data_dict[user_id]["answered_correctly"].extend(w_df["answered_correctly"].values.tolist())
+        return self
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"previous_encoding_all_{self.column}")
+        df[self.make_col_name] = df.groupby(self.column)["answered_correctly"].shift(1).fillna(-99).astype("int8")
+
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        def f(x):
+            user_id = x[0]
+            content_id = x[1]
+            if user_id not in self.data_dict:
+                return None
+            indices = [i for i, xx in enumerate(self.data_dict[user_id]["content_id"]) if xx == content_id]
+
+            if len(indices) == 0: # user_idに対して過去content_idの記録がない
+                return None
+            else:
+                last_idx = indices[-1]
+                return self.data_dict[user_id]["answered_correctly"][last_idx]
+
+        df[self.make_col_name] = [f(x) for x in df[self.column].values]
         df[self.make_col_name] = df[self.make_col_name].fillna(-99).astype("int8")
         return df
 

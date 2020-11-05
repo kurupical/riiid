@@ -12,7 +12,8 @@ from feature_engineering.feature_factory import \
     ShiftDiffEncoder, \
     Counter, \
     PreviousAnswer, \
-    CategoryLevelEncoder
+    CategoryLevelEncoder, \
+    PreviousAnswer2
 from experiment.common import get_logger
 
 class PartialAggregatorTestCase(unittest.TestCase):
@@ -498,11 +499,11 @@ class PartialAggregatorTestCase(unittest.TestCase):
                                       logger=logger)
 
         # all_predict
-        df = pd.DataFrame({"user_id": ["x", "x", "y", "y"],
-                           "content_id": ["x", "x", "y", "y"],
+        df = pd.DataFrame({"user_id": [15, 15, 123, 123],
+                           "content_id": [15, 15, 123, 123],
                            "answered_correctly": [1, 0, 0, 1]})
-        df_expect = pd.DataFrame({"user_id": ["x", "x", "y", "y"],
-                                  "content_id": ["x", "x", "y", "y"],
+        df_expect = pd.DataFrame({"user_id": [15, 15, 123, 123],
+                                  "content_id": [15, 15, 123, 123],
                                   "answered_correctly": [1, 0, 0, 1],
                                   "previous_answer_['user_id', 'content_id']": [np.nan, 1, np.nan, 0]})
         df_expect["previous_answer_['user_id', 'content_id']"] = df_expect["previous_answer_['user_id', 'content_id']"].fillna(-99).astype("int8")
@@ -514,12 +515,12 @@ class PartialAggregatorTestCase(unittest.TestCase):
         for i in range(len(df)):
             agger.fit(df.iloc[i:i+1])
 
-        df_test = pd.DataFrame({"user_id": ["x", "y", "z"],
-                                "content_id": ["x", "y", "z"],
+        df_test = pd.DataFrame({"user_id": [15, 123, 1222],
+                                "content_id": [15, 123, 1222],
                                 "answered_correctly": [1, 1, 1]})
 
-        df_expect = pd.DataFrame({"user_id": ["x", "y", "z"],
-                                  "content_id": ["x", "y", "z"],
+        df_expect = pd.DataFrame({"user_id": [15, 123, 1222],
+                                  "content_id": [15, 123, 1222],
                                   "answered_correctly": [1, 1, 1],
                                   "previous_answer_['user_id', 'content_id']": [0, 1, np.nan]})
         df_expect["previous_answer_['user_id', 'content_id']"] = df_expect["previous_answer_['user_id', 'content_id']"].fillna(-99).astype("int8")
@@ -606,6 +607,47 @@ class PartialAggregatorTestCase(unittest.TestCase):
         df_expect = df_expect.astype("float32")
 
         df_actual = agger.partial_predict(df_test)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+
+    def test_fit_previous_answered2(self):
+        logger = get_logger()
+        feature_factory_dict = {
+            ("user_id", "content_id"): {
+                "PreviousAnswer": PreviousAnswer2(column=["user_id", "content_id"])
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        # all_predict
+        df = pd.DataFrame({"user_id": [15, 15, 123, 123],
+                           "content_id": [15, 15, 123, 123],
+                           "answered_correctly": [1, 0, 0, 1]})
+        df_expect = pd.DataFrame({"user_id": [15, 15, 123, 123],
+                                  "content_id": [15, 15, 123, 123],
+                                  "answered_correctly": [1, 0, 0, 1],
+                                  "previous_answer_['user_id', 'content_id']": [np.nan, 1, np.nan, 0]})
+        df_expect["previous_answer_['user_id', 'content_id']"] = df_expect["previous_answer_['user_id', 'content_id']"].fillna(-99).astype("int8")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # fit - partial_predict
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        df_test = pd.DataFrame({"user_id": [15, 123, 1222],
+                                "content_id": [15, 123, 1222],
+                                "answered_correctly": [1, 1, 1]})
+
+        df_expect = pd.DataFrame({"user_id": [15, 123, 1222],
+                                  "content_id": [15, 123, 1222],
+                                  "answered_correctly": [1, 1, 1],
+                                  "previous_answer_['user_id', 'content_id']": [0, 1, np.nan]})
+        df_expect["previous_answer_['user_id', 'content_id']"] = df_expect["previous_answer_['user_id', 'content_id']"].fillna(-99).astype("int8")
+        df_actual = agger.partial_predict(df_test)
+
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
 

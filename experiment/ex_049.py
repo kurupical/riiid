@@ -14,8 +14,7 @@ from feature_engineering.feature_factory import \
     UserCountBinningEncoder, \
     CategoryLevelEncoder, \
     PriorQuestionElapsedTimeBinningEncoder, \
-    PriorQuestionElapsedTimeDiv10Encoder
-import random
+    PreviousAnswer2
 from experiment.common import get_logger
 import pandas as pd
 from model.lgbm import train_lgbm_cv
@@ -31,7 +30,7 @@ import pickle
 output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
 
 is_debug = False
-wait_time = 0
+wait_time = 60*60*14
 if not is_debug:
     for _ in tqdm.tqdm(range(wait_time)):
         time.sleep(1)
@@ -40,12 +39,7 @@ def make_feature_factory_manager(split_num):
     logger = get_logger()
 
     feature_factory_dict = {}
-    feature_factory_dict["tags"] = {
-        "TagsSeparator": TagsSeparator()
-    }
-    for column in ["content_id", "user_id", "part", "prior_question_had_explanation",
-                   "tags1", "tags2",
-                   ("user_id", "prior_question_had_explanation"), ("user_id", "part"),
+    for column in ["content_id", "user_id", "prior_question_had_explanation", ("user_id", "part"),
                    ("content_id", "prior_question_had_explanation")]:
         is_partial_fit = (column == "content_id" or column == "user_id")
 
@@ -102,7 +96,9 @@ def make_feature_factory_manager(split_num):
         "CountEncoder": CountEncoder(column=["part", "prior_question_elapsed_time_bin"]),
         "TargetEncoder": TargetEncoder(column=["part", "prior_question_elapsed_time_bin"])
     }
-
+    feature_factory_dict[("user_id", "content_id")] = {
+        "PreviousAnswer2": PreviousAnswer2(column=["user_id", "content_id"])
+    }
     feature_factory_manager = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
                                                     logger=logger,
                                                     split_num=split_num)
@@ -119,6 +115,24 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
     feature_factory_manager = make_feature_factory_manager(split_num=10)
     df = feature_factory_manager.all_predict(df)
     os.makedirs(output_dir, exist_ok=True)
+    params = {
+        'objective': 'binary',
+        'num_leaves': 96,
+        'max_depth': -1,
+        'learning_rate': 0.3,
+        'boosting': 'gbdt',
+        'bagging_fraction': 0.5,
+        'feature_fraction': 0.7,
+        'bagging_seed': 0,
+        'reg_alpha': 100,  # 1.728910519108444,
+        'reg_lambda': 20,
+        'random_state': 0,
+        'metric': 'auc',
+        'verbosity': -1,
+        "n_estimators": 10000,
+        "early_stopping_rounds": 50
+    }
+    df.tail(1000).to_csv("exp028.csv", index=False)
 
     df = df.drop(["user_answer", "tags", "type_of"], axis=1)
     df = df[df["answered_correctly"].notnull()]
@@ -127,34 +141,13 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
 
     model_id = os.path.basename(fname).replace(".pickle", "")
     print(model_id)
-    for _ in range(10000):
-        params = {
-            'objective': 'binary',
-            'num_leaves': random.choice([96, 128]),
-            'max_depth': -1,
-            'learning_rate': 0.3,
-            'boosting': random.choice(['gbdt', 'gbdt', 'gbdt', 'goss']),
-            'bagging_fraction': random.choice([0.1, 0.5, 0.7, 0.9]),
-            'feature_fraction': random.choice([0.1, 0.3, 0.5, 0.7, 0.9]),
-            'bagging_seed': 0,
-            'reg_alpha': random.choice([1, 5, 10, 15, 20, 100]),
-            'reg_lambda': random.choice([1, 5, 10, 15, 20, 100]),
-            'random_state': 0,
-            'metric': 'auc',
-            'verbosity': -1,
-            "n_estimators": 10000,
-            "early_stopping_rounds": 100
-        }
-
-        model_id = os.path.basename(fname).replace(".pickle", "")
-        train_lgbm_cv(df,
-                      params=params,
-                      output_dir=output_dir,
-                      model_id=model_id,
-                      exp_name=model_id,
-                      drop_user_id=True,
-                      experiment_id=2)
-        del params
+    train_lgbm_cv(df,
+                  params=params,
+                  output_dir=output_dir,
+                  model_id=model_id,
+                  exp_name=model_id,
+                  is_debug=is_debug,
+                  drop_user_id=True)
 
 # fit
 df_question = pd.read_csv("../input/riiid-test-answer-prediction/questions.csv",
