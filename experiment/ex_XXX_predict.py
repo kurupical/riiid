@@ -108,6 +108,7 @@ def run(debug,
         else:
             update_record = 50
         if len(df_test_prev) > update_record:
+            logger.info("fitting...")
             df_test_prev["answered_correctly"] = answered_correctlies
             df_test_prev["user_answer"] = user_answers
             # df_test_prev = df_test_prev.drop(prior_columns, axis=1)
