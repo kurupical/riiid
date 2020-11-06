@@ -27,7 +27,7 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/ex_041/20201102230106"
+model_dir = "../output/ex_048/20201105073920"
 
 data_types_dict = {
     'row_id': 'int64',
@@ -138,14 +138,16 @@ def run(debug,
 
         df = feature_factory_manager.partial_predict(df_test)
         df.columns = [x.replace(" ", "_") for x in df.columns]
-        logger.info(f"other... ")
+        logger.info(f"predict...")
 
         # predict
         predicts = []
         cols = models[0].feature_name()
+        w_df = df[cols]
         for model in models:
-            predicts.append(model.predict(df[cols]))
+            predicts.append(model.predict(w_df))
 
+        logger.info("other...")
         df["answered_correctly"] = np.array(predicts).transpose().mean(axis=1)
         df_sample_prediction = pd.merge(df_sample_prediction[["row_id"]],
                                         df[["row_id", "answered_correctly"]],

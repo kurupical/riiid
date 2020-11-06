@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import tqdm
 from logging import Logger
+import time
+
 
 class FeatureFactory:
     feature_name_base = ""
@@ -957,15 +959,17 @@ class PreviousAnswer2(FeatureFactory):
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
 
-        for key, w_df in group[["content_id", "answered_correctly"]]:
+        last_data_dict = group["answered_correctly"].last().to_dict()
+        for key, answer in last_data_dict.items():
             user_id = key[0]
+            content_id = key[1]
             if user_id not in self.data_dict:
                 self.data_dict[user_id] = {}
-                self.data_dict[user_id]["content_id"] = w_df["content_id"].values.tolist()
-                self.data_dict[user_id]["answered_correctly"] = w_df["answered_correctly"].values.tolist()
+                self.data_dict[user_id]["content_id"] = [content_id]
+                self.data_dict[user_id]["answered_correctly"] = [answer]
             else:
-                self.data_dict[user_id]["content_id"].extend(w_df["content_id"].values.tolist())
-                self.data_dict[user_id]["answered_correctly"].extend(w_df["answered_correctly"].values.tolist())
+                self.data_dict[user_id]["content_id"] = [content_id] + self.data_dict[user_id]["content_id"]
+                self.data_dict[user_id]["answered_correctly"] = [answer] + self.data_dict[user_id]["answered_correctly"]
         return self
 
     def all_predict(self,
@@ -977,19 +981,23 @@ class PreviousAnswer2(FeatureFactory):
 
     def partial_predict(self,
                         df: pd.DataFrame):
+        def get_index(l, x):
+            try:
+                ret = l.index(x)
+                return ret
+            except ValueError:
+                return None
+
         def f(x):
             user_id = x[0]
             content_id = x[1]
             if user_id not in self.data_dict:
                 return None
-            indices = [i for i, xx in enumerate(self.data_dict[user_id]["content_id"]) if xx == content_id]
-
-            if len(indices) == 0: # user_idに対して過去content_idの記録がない
+            last_idx = get_index(self.data_dict[user_id]["content_id"], content_id) # listは逆順になっているので
+            if last_idx is None: # user_idに対して過去content_idの記録がない
                 return None
             else:
-                last_idx = indices[-1]
                 return self.data_dict[user_id]["answered_correctly"][last_idx]
-
         df[self.make_col_name] = [f(x) for x in df[self.column].values]
         df[self.make_col_name] = df[self.make_col_name].fillna(-99).astype("int8")
         return df

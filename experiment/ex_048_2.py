@@ -28,6 +28,7 @@ import tqdm
 import pickle
 
 output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
+os.makedirs(output_dir, exist_ok=True)
 
 is_debug = False
 wait_time = 0
@@ -108,50 +109,6 @@ def make_feature_factory_manager(split_num):
                                                     logger=logger,
                                                     split_num=split_num)
     return feature_factory_manager
-
-for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
-    print(fname)
-    if is_debug:
-        df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)])
-    else:
-        df = pd.read_pickle(fname).sort_values(["user_id", "timestamp"])
-    df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
-    df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
-    feature_factory_manager = make_feature_factory_manager(split_num=10)
-    df = feature_factory_manager.all_predict(df)
-    params = {
-        'objective': 'binary',
-        'num_leaves': 96,
-        'max_depth': -1,
-        'learning_rate': 0.3,
-        'boosting': 'gbdt',
-        'bagging_fraction': 0.5,
-        'feature_fraction': 0.7,
-        'bagging_seed': 0,
-        'reg_alpha': 100,  # 1.728910519108444,
-        'reg_lambda': 20,
-        'random_state': 0,
-        'metric': 'auc',
-        'verbosity': -1,
-        "n_estimators": 10000,
-        "early_stopping_rounds": 50
-    }
-    df.tail(1000).to_csv("exp028.csv", index=False)
-
-    df = df.drop(["user_answer", "tags", "type_of"], axis=1)
-    df = df[df["answered_correctly"].notnull()]
-    print(df.columns)
-    print(df.shape)
-
-    model_id = os.path.basename(fname).replace(".pickle", "")
-    print(model_id)
-    train_lgbm_cv(df,
-                  params=params,
-                  output_dir=output_dir,
-                  model_id=model_id,
-                  exp_name=model_id,
-                  is_debug=is_debug,
-                  drop_user_id=True)
 
 # fit
 df_question = pd.read_csv("../input/riiid-test-answer-prediction/questions.csv",

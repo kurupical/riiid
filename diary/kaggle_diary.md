@@ -246,4 +246,7 @@
 * ex_047: parameter tuned & lr=0.1
 * ex_048: previous_answer(reduce memory)
 * ex_049: reduce features
+
+# 2020/11/6
+
 </div>
