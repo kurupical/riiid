@@ -12,8 +12,7 @@ class FeatureFactory:
                  column: Union[list, str],
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         """
 
         :param column:
@@ -21,7 +20,6 @@ class FeatureFactory:
         :param logger:
         :param is_partial_fit:
         :param is_all_fit:
-        :param onebyone:
             fit時のflag. fitは処理時間削減のため通常150行に1回まとめて行うが、そうではなく逐次fitしたいときはTrueを入れる
         """
         self.column = column
@@ -29,7 +27,6 @@ class FeatureFactory:
         self.split_num = split_num
         self.data_dict = {}
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
         self.make_col_name = f"{self.feature_name_base}_{self.column}"# .replace(" ", "").replace("'", "")
 
     def fit(self,
@@ -125,8 +122,7 @@ class Counter(FeatureFactory):
                  categories: list,
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         self.groupby_column = groupby_column
         self.agg_column = agg_column
         self.categories = categories
@@ -134,7 +130,6 @@ class Counter(FeatureFactory):
         self.split_num = split_num
         self.data_dict = {}
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
 
     def fit(self,
             group,
@@ -189,13 +184,11 @@ class TargetEncoder(FeatureFactory):
                  initial_score: float = 0,
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         super().__init__(column=column,
                          split_num=split_num,
                          logger=logger,
-                         is_partial_fit=is_partial_fit,
-                         onebyone=onebyone)
+                         is_partial_fit=is_partial_fit)
         self.initial_weight = initial_weight
         self.initial_score = initial_score
 
@@ -256,11 +249,9 @@ class TagsSeparator(FeatureFactory):
 
     def __init__(self,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
 
     def fit(self,
             group,
@@ -304,11 +295,9 @@ class TagsSeparator2(FeatureFactory):
 
     def __init__(self,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
 
     def fit(self,
             group,
@@ -350,11 +339,9 @@ class PartSeparator(FeatureFactory):
 
     def __init__(self,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
 
     def fit(self,
             group,
@@ -392,11 +379,9 @@ class UserCountBinningEncoder(FeatureFactory):
 
     def __init__(self,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
 
     def fit(self,
             group,
@@ -435,11 +420,9 @@ class PriorQuestionElapsedTimeDiv10Encoder(FeatureFactory):
 
     def __init__(self,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
 
     def fit(self,
             group,
@@ -477,11 +460,9 @@ class PriorQuestionElapsedTimeBinningEncoder(FeatureFactory):
 
     def __init__(self,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
 
     def fit(self,
             group,
@@ -520,11 +501,9 @@ class TargetEncodeVsUserId(FeatureFactory):
 
     def __init__(self,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
 
     def fit(self,
             group,
@@ -569,12 +548,10 @@ class MeanAggregator(FeatureFactory):
                  agg_column: str,
                  remove_now: bool,
                  logger: Union[Logger, None] =None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         super().__init__(column=column,
                          logger=logger,
-                         is_partial_fit=is_partial_fit,
-                         onebyone=onebyone)
+                         is_partial_fit=is_partial_fit)
         self.agg_column = agg_column
         self.remove_now = remove_now
         self.make_col_name = f"{self.feature_name_base}_{self.agg_column}_by_{self.column}"
@@ -626,15 +603,13 @@ class UserLevelEncoder2(FeatureFactory):
                  initial_score: float =.0,
                  initial_weight: float = 0,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         self.column = "user_id"
         self.vs_column = vs_column
         self.initial_score = initial_score
         self.initial_weight = initial_weight
         self.logger = logger
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
         self.data_dict = {}
 
     def fit(self,
@@ -711,7 +686,6 @@ class CategoryLevelEncoder(FeatureFactory):
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False,
-                 onebyone: bool = False,
                  vs_columns: Union[str, list] = "content_id"):
         self.groupby_column = groupby_column
         self.agg_column = agg_column
@@ -720,7 +694,6 @@ class CategoryLevelEncoder(FeatureFactory):
         self.split_num = split_num
         self.data_dict = {}
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
         self.vs_columns = vs_columns
 
 
@@ -799,13 +772,11 @@ class NUniqueEncoder(FeatureFactory):
                  groupby: str,
                  column: str,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         self.groupby = groupby
         self.column = column
         self.logger = logger
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
         self.make_col_name = f"nunique_{self.column}_by_{self.groupby}"
         self.data_dict = {}
 
@@ -862,13 +833,11 @@ class ShiftDiffEncoder(FeatureFactory):
                  groupby: str,
                  column: str,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False,
-                 onebyone: bool = False):
+                 is_partial_fit: bool = False):
         self.groupby = groupby
         self.column = column
         self.logger = logger
         self.is_partial_fit = is_partial_fit
-        self.onebyone = onebyone
         self.make_col_name = f"shiftdiff_{self.column}_by_{self.groupby}"
         self.data_dict = {}
 
@@ -1033,13 +1002,11 @@ class FeatureFactoryManager:
 
     def fit(self,
             df: pd.DataFrame,
-            onebyone_mode: bool = False,
             is_first_fit: bool = False):
         """
 
         :param df:
         :param partial_predict_mode:
-        :param onebyone_mode: 通常fitは150件程度まとめて実施するが、そうではなく毎回バッチ更新したいとき
         :param first_fit: データ取り込み後最初のfitをするときはTrue.
         :return:
         """
@@ -1055,9 +1022,8 @@ class FeatureFactoryManager:
                 raise ValueError
             for factory in dicts.values():
                 df = factory.make_feature(df)
-                if factory.onebyone == onebyone_mode or is_first_fit:
-                    factory.fit(group=group,
-                                feature_factory_dict=self.feature_factory_dict)
+                factory.fit(group=group,
+                            feature_factory_dict=self.feature_factory_dict)
                 if factory.is_partial_fit:
                     if not is_first_fit:
                         df = factory.partial_predict(df)
