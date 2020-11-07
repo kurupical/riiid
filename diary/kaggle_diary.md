@@ -245,8 +245,27 @@
 ## experiment
 * ex_047: parameter tuned & lr=0.1
 * ex_048: previous_answer(reduce memory)
-* ex_049: reduce features
+* ex_049: reduce features => CV: 0.776 / LB: 0.784(freq=30)
 
 # 2020/11/6
+## experiment
+* ex_050: nnを試す
+* ex_051: minimam_nn(64-32-1) => CV: 0.755
 
+# 2020/11/7
+## experiment
+* ex_048_3: 再度試す(速度改善ver)
+
+## EDA
+* ex_052:
+  * PreviousAnswerにindexつける! (ex_048とコード自体はかわらない)
+* 020_previous_xxx
+  * part / content_id
+    * ![image_24](image_24.png)
+  * shift1_contentid: 正解したのにもう1回やってる人いる。単純に間違えただけでは? => ex_052: previous_answer3
+    * ![image_25](image_25.png)
+  * shift2_contentid: 間違えた! -> 教材見て -> もう1度復習　…これ、頑張ればquestionとlectureひも付けられそう
+    * ![image_26](image_26.png)
+  * shift3_contentid: shift2とおなじ(ちょっとタイムラグあるだけ)
+    * ![image_27](image_27.png)
 </div>

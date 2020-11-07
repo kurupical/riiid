@@ -919,7 +919,7 @@ class PreviousAnswer(FeatureFactory):
         def f(x):
             return (x[0]+1)*(x[1]+1)
         df[self.make_col_name] = [self.data_dict[self._make_key(x)] if self._make_key(x) in self.data_dict else np.nan
-                                  for x in df[self.column].values]
+                                                for x in df[self.column].values]
         df[self.make_col_name] = df[self.make_col_name].fillna(-99).astype("int8")
         return df
 
@@ -947,7 +947,27 @@ class PreviousAnswer2(FeatureFactory):
     def all_predict(self,
                     df: pd.DataFrame):
         self.logger.info(f"previous_encoding_all_{self.column}")
-        df[self.make_col_name] = df.groupby(self.column)["answered_correctly"].shift(1).fillna(-99).astype("int8")
+        def f(series):
+            """
+            何個前の特徴だったか
+            :param series:
+            :return:
+            """
+            ret = []
+            for i, content_id in enumerate(series.values):
+                ary = series.values[:i][::-1]
+                if len(ary) == 0:
+                    ret.append(None)
+                else:
+                    try:
+                        argmin = ary.tolist().index(content_id)
+                        ret.append(argmin)
+                    except ValueError:
+                        ret.append(None)
+            return ret
+        self.logger.info(f"previous_encoding_all_{self.column}")
+        df[f"previous_answer_{self.column}"] = df.groupby(self.column)["answered_correctly"].shift(1).fillna(-99).astype("int8")
+        df[f"previous_answer_index_{self.column}"] = df.groupby("user_id")["content_id"].transform(f).fillna(-99).astype("int16")
 
         return df
 
@@ -964,14 +984,19 @@ class PreviousAnswer2(FeatureFactory):
             user_id = x[0]
             content_id = x[1]
             if user_id not in self.data_dict:
-                return None
+                return [None, None]
             last_idx = get_index(self.data_dict[user_id]["content_id"], content_id) # listは逆順になっているので
             if last_idx is None: # user_idに対して過去content_idの記録がない
-                return None
+                return [None, None]
             else:
-                return self.data_dict[user_id]["answered_correctly"][last_idx]
-        df[self.make_col_name] = [f(x) for x in df[self.column].values]
-        df[self.make_col_name] = df[self.make_col_name].fillna(-99).astype("int8")
+                return [self.data_dict[user_id]["answered_correctly"][last_idx], last_idx]
+        ary = [f(x) for x in df[self.column].values]
+        ans_ary = [x[0] for x in ary]
+        index_ary = [x[1] for x in ary]
+        df[f"previous_answer_{self.column}"] = ans_ary
+        df[f"previous_answer_{self.column}"] = df[self.make_col_name].fillna(-99).astype("int8")
+        df[f"previous_answer_index_{self.column}"] = index_ary
+        df[f"previous_answer_index_{self.column}"] = df[f"previous_answer_index_{self.column}"].fillna(-99).astype("int16")
         return df
 
 class FeatureFactoryManager:
