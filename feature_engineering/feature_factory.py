@@ -5,6 +5,7 @@ import tqdm
 from logging import Logger
 import time
 
+tqdm.tqdm.pandas()
 
 class FeatureFactory:
     feature_name_base = ""
@@ -926,15 +927,25 @@ class PreviousAnswer(FeatureFactory):
 class PreviousAnswer2(FeatureFactory):
     feature_name_base = "previous_answer"
 
+    def __init__(self,
+                 groupby: str,
+                 column: str,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.groupby = groupby
+        self.column = column
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.data_dict = {}
+
     def fit(self,
             group,
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
 
-        last_data_dict = group["answered_correctly"].last().to_dict()
-        for key, answer in last_data_dict.items():
-            user_id = key[0]
-            content_id = key[1]
+        for user_id, w_df in group[["content_id", "answered_correctly"]]:
+            content_id = w_df["content_id"].values[::-1]
+            answer = w_df["answered_correctly"].values[::-1]
             if user_id not in self.data_dict:
                 self.data_dict[user_id] = {}
                 self.data_dict[user_id]["content_id"] = [content_id]
@@ -953,21 +964,23 @@ class PreviousAnswer2(FeatureFactory):
             :param series:
             :return:
             """
+            ary = []
+            for i in range(len(series)):
+                ary.append(series.shift(i).values)
+            ary = np.array(ary) # shape=(len(series), len(series)
+
+            diff_ary = ary[0:1, :] - ary[1:, :]
             ret = []
-            for i, content_id in enumerate(series.values):
-                ary = series.values[:i][::-1]
-                if len(ary) == 0:
+            for i in range(diff_ary.shape[1]):
+                w_ret = np.where(diff_ary[:, i] == 0)[0]
+                if len(w_ret) == 0:
                     ret.append(None)
                 else:
-                    try:
-                        argmin = ary.tolist().index(content_id)
-                        ret.append(argmin)
-                    except ValueError:
-                        ret.append(None)
+                    ret.append(w_ret[0])
             return ret
         self.logger.info(f"previous_encoding_all_{self.column}")
         df[f"previous_answer_{self.column}"] = df.groupby(self.column)["answered_correctly"].shift(1).fillna(-99).astype("int8")
-        df[f"previous_answer_index_{self.column}"] = df.groupby("user_id")["content_id"].transform(f).fillna(-99).astype("int16")
+        df[f"previous_answer_index_{self.column}"] = df.groupby("user_id")["content_id"].progress_transform(f).fillna(-99).astype("int16")
 
         return df
 
@@ -990,11 +1003,11 @@ class PreviousAnswer2(FeatureFactory):
                 return [None, None]
             else:
                 return [self.data_dict[user_id]["answered_correctly"][last_idx], last_idx]
-        ary = [f(x) for x in df[self.column].values]
+        ary = [f(x) for x in df[[self.groupby, self.column]].values]
         ans_ary = [x[0] for x in ary]
         index_ary = [x[1] for x in ary]
         df[f"previous_answer_{self.column}"] = ans_ary
-        df[f"previous_answer_{self.column}"] = df[self.make_col_name].fillna(-99).astype("int8")
+        df[f"previous_answer_{self.column}"] = df[f"previous_answer_{self.column}"].fillna(-99).astype("int8")
         df[f"previous_answer_index_{self.column}"] = index_ary
         df[f"previous_answer_index_{self.column}"] = df[f"previous_answer_index_{self.column}"].fillna(-99).astype("int16")
         return df
