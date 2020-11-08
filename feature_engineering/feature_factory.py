@@ -4,6 +4,8 @@ import numpy as np
 import tqdm
 from logging import Logger
 import time
+import pickle
+import os
 
 tqdm.tqdm.pandas()
 
@@ -1011,6 +1013,146 @@ class PreviousAnswer2(FeatureFactory):
         df[f"previous_answer_index_{self.column}"] = index_ary
         df[f"previous_answer_index_{self.column}"] = df[f"previous_answer_index_{self.column}"].fillna(-99).astype("int16")
         return df
+
+
+
+class QuestionLectureTableEncoder(FeatureFactory):
+    feature_name_base = "previous_answer"
+    question_lecture_dict_path = "../feature_engineering/question_lecture_dict.pickle"
+
+    def __init__(self,
+                 question_lecture_dict: Union[Dict[tuple, float], None] = None,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        if question_lecture_dict is None:
+            if not os.path.isfile(self.question_lecture_dict_path):
+                print("make_new_dict")
+                df = pd.read_pickle("../input/riiid-test-answer-prediction/split10/train_0.pickle")
+                self.make_dict(df)
+            with open(self.question_lecture_dict_path, "rb") as f:
+                self.question_lecture_dict = pickle.load(f)
+        else:
+            self.question_lecture_dict = question_lecture_dict
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.data_dict = {}
+
+    def make_dict(self,
+                  df: pd.DataFrame,
+                  test_mode: bool = False,
+                  output_dir: str = None):
+        """
+        question_lecture_dictを作って, 所定の場所に保存する
+        :param df:
+        :param is_output:
+        :return:
+        """
+
+        def f(series, content_id):
+            return ((series == content_id).cumsum() > 0)
+
+        if test_mode:
+            # test_code用
+            lectures = df[df["content_type_id"] == 1]["content_id"].drop_duplicates()
+            questions = df[df["content_type_id"] == 0]["content_id"].drop_duplicates()
+        else:
+            df_question = pd.read_csv("../input/riiid-test-answer-prediction/questions.csv",
+                                      dtype={"bundle_id": "int32",
+                                             "question_id": "int32",
+                                             "correct_answer": "int8",
+                                             "part": "int8"})
+            df_lecture = pd.read_csv("../input/riiid-test-answer-prediction/lectures.csv",
+                                     dtype={"lecture_id": "int32",
+                                            "tag": "int16",
+                                            "part": "int8"})
+
+            lectures = df_lecture["lecture_id"].drop_duplicates().values
+            questions = df_question["question_id"].drop_duplicates().values
+
+        ret_dict = {}
+        for lecture in tqdm.tqdm(lectures, desc="make_dict..."):
+            df["lectured"] = df.groupby(["user_id"])["content_id"].transform(f, **{"content_id": lecture})
+            for question, w_df in df[df["content_type_id"] == 0].groupby("content_id"):
+                w_dict = w_df.groupby("lectured")["answered_correctly"].mean().to_dict()
+
+                if 0 not in w_dict or 1 not in w_dict:
+                    ret_dict[(question, lecture)] = 0
+                else:
+                    score = w_dict[1] - w_dict[0]
+                    ret_dict[(question, lecture)] = score
+
+        for lecture in lectures:
+            for question in questions:
+                if (question, lecture) not in ret_dict:
+                    ret_dict[(question, lecture)] = 0
+
+        if output_dir is None:
+            output_dir = self.question_lecture_dict_path
+        with open(output_dir, "wb") as f:
+            pickle.dump(ret_dict, f)
+
+    def fit(self,
+            group,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        for user_id, w_df in group[["content_type_id", "content_id"]]:
+            w_df = w_df[w_df["content_type_id"] == 1]
+            if user_id not in self.data_dict:
+                self.data_dict[user_id] = w_df["content_id"].values.tolist()
+            else:
+                self.data_dict[user_id].extend(w_df["content_id"].values.tolist())
+        return self
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"question_lecture_table_encode")
+        def f(series):
+            def make_lecture_list(series):
+                ret = []
+                w_ret = []
+                for x in series.values:
+                    w_ret.append(x)
+                    ret.append(w_ret[:])
+                return ret
+
+            def calc_score(x):
+                list_lectures = x[0]
+                content_id = x[1]
+                content_type_id = x[2]
+                score = 0
+                for lec in list_lectures:
+                    if content_type_id == 1:
+                        return 0
+                    if (content_id, lec) in self.question_lecture_dict:
+                        score += self.question_lecture_dict[(content_id, lec)]
+                return score
+            w_df = df.loc[series.index]
+            w_df["w_content_id"] = w_df["content_id"] * w_df["content_type_id"] # content_type_id=0: questionは強制的に全部ゼロ
+            w_df["list_lectures"] = w_df.groupby("user_id")["w_content_id"].transform(make_lecture_list)
+            score = [calc_score(x) for x in w_df[["list_lectures", "content_id", "content_type_id"]].values]
+            return score
+        df["question_lecture_score"] = df.groupby("user_id")["content_id"].progress_transform(f).astype("float32")# "content_id"はなんでもいい
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        def calc_score(x):
+            user_id = x[0]
+            content_id = x[1]
+            content_type_id = x[2]
+
+            if content_type_id == 1:
+                return 0
+            if user_id not in self.data_dict:
+                return 0
+            lecture_list = self.data_dict[user_id]
+            score = np.array([self.question_lecture_dict[(content_id, x)] for x in lecture_list]).sum()
+            return score
+        print(self.data_dict)
+        df["question_lecture_score"] = [calc_score(x) for x in df[["user_id", "content_id", "content_type_id"]].values]
+        df["question_lecture_score"] = df["question_lecture_score"].astype("float32")
+        return df
+
 
 class FeatureFactoryManager:
     def __init__(self,

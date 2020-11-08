@@ -13,8 +13,11 @@ from feature_engineering.feature_factory import \
     Counter, \
     PreviousAnswer, \
     CategoryLevelEncoder, \
-    PreviousAnswer2
+    PreviousAnswer2, \
+    QuestionLectureTableEncoder
 from experiment.common import get_logger
+import pickle
+import os
 
 class PartialAggregatorTestCase(unittest.TestCase):
 
@@ -689,8 +692,78 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
+    def test_question_lecture_table_encoder(self):
+        logger = get_logger()
 
+        question_lecture_dict = {
+            ("q0", "a0"): 0.1,
+            ("q1", "a0"): 0.2,
+            ("q0", "a1"): 0.4,
+            ("q1", "a1"): 0.8,
+            ("q0", "a2"): 1.6, # dummy
+            ("q1", "a2"): 3.2, # dummy
+        }
+        feature_factory_dict = {
+            "user_id": {
+                "QuestionLectureTableEncoder": QuestionLectureTableEncoder(question_lecture_dict=question_lecture_dict)
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
 
+        df = pd.DataFrame({"user_id": [1] * 9 + [2] * 9,
+                           "content_id": ["q0", "q1", "a0", "a2", "q0", "q1", "a1", "q0", "q1"] * 2,
+                           "content_type_id": [0, 0, 1, 0, 0, 0, 1, 0, 0] * 2})
+
+        df_expect = pd.DataFrame({"question_lecture_score": [0, 0, 0, 0, 0.1, 0.2, 0, 0.1+0.4, 0.2+0.8] * 2})
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        df = pd.DataFrame({"user_id": [1, 1, 2, 3],
+                           "content_id": ["a2", "q0", "q1", "q1"],
+                           "content_type_id": [1, 0, 0, 0]})
+        df_expect = pd.DataFrame({"question_lecture_score": [
+            0, 0.1+0.4, 0.2+0.8, 0
+        ]})
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+    def test_question_lecture_table_create(self):
+
+        df = pd.DataFrame({"content_id": [1, 2, 3, 4, 1, 2] + [1, 3, 2, 4, 1, 2, 2] + [5, 6],
+                           "user_id": [1]*6 + [2]*7 + [3]*2,
+                           "content_type_id": [0, 0, 1, 1, 0, 0] + [0, 1, 0, 1, 0, 0, 0] + [1, 1],
+                           "answered_correctly": [0, 0, 1, 1, 1, 1]*2 + [0] + [0, 0]})
+        pickle_dir = "./test_dict.pickle"
+        if os.path.isdir(pickle_dir):
+            os.remove(pickle_dir)
+
+        expect = {
+            (1, 3): 1 - 0,
+            (1, 4): 1 - 0,
+            (1, 5): 0,
+            (1, 6): 0,
+            (2, 3): 3/4 - 0,
+            (2, 4): 2/3 - 1/2,
+            (2, 5): 0,
+            (2, 6): 0
+        }
+
+        ql_table_encoder = QuestionLectureTableEncoder(question_lecture_dict={})
+
+        ql_table_encoder.make_dict(df, test_mode=True, output_dir=pickle_dir)
+        with open(pickle_dir, "rb") as f:
+            actual = pickle.load(f)
+
+        self.assertEqual(expect, actual)
+        os.remove(pickle_dir)
 
 if __name__ == "__main__":
     unittest.main()
