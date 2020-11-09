@@ -960,8 +960,8 @@ class PreviousAnswer2(FeatureFactory):
                 self.data_dict[user_id]["content_id"] = content_id
                 self.data_dict[user_id]["answered_correctly"] = answer
             else:
-                self.data_dict[user_id]["content_id"] = content_id + self.data_dict[user_id]["content_id"][:len(content_id)]
-                self.data_dict[user_id]["answered_correctly"] = answer + self.data_dict[user_id]["answered_correctly"][:len(content_id)]
+                self.data_dict[user_id]["content_id"] = content_id + self.data_dict[user_id]["content_id"][len(content_id):]
+                self.data_dict[user_id]["answered_correctly"] = answer + self.data_dict[user_id]["answered_correctly"][len(content_id):]
         return self
 
     def all_predict(self,
@@ -1215,7 +1215,6 @@ class QuestionLectureTableEncoder(FeatureFactory):
             lecture_list = self.data_dict[user_id]
             score = np.array([self.question_lecture_dict[(content_id, x)] for x in lecture_list]).sum()
             return score
-        print(self.data_dict)
         df["question_lecture_score"] = [calc_score(x) for x in df[["user_id", "content_id", "content_type_id"]].values]
         df["question_lecture_score"] = df["question_lecture_score"].astype("float32")
         return df
