@@ -996,7 +996,7 @@ class PreviousAnswer2(FeatureFactory):
             for col in w_df.columns:
                 df[col] = w_df[col].values
         else:
-            prev_answer = df.groupby(self.column)["answered_correctly"].shift(1).fillna(-99).astype("int8")
+            prev_answer = df.groupby([self.groupby, "content_id"])["answered_correctly"].shift(1).fillna(-99).astype("int8")
             prev_answer_index = df.groupby("user_id")["content_id"].progress_transform(f).fillna(-99).astype("int16")
             df[f"previous_answer_{self.column}"] = prev_answer
             df[f"previous_answer_index_{self.column}"] = prev_answer_index
