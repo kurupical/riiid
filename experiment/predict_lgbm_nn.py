@@ -25,9 +25,11 @@ from logging import Logger, StreamHandler, Formatter
 import shutil
 import time
 import warnings
+from tensorflow.keras.models import Model, Sequential, load_model
+
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/ex_048/20201105073920"
+model_dir = "../output/ex_051/20201106223814"
 
 data_types_dict = {
     'row_id': 'int64',
@@ -72,10 +74,13 @@ def run(debug,
                                     "tag": "int16",
                                     "part": "int8"})
     # model loading
-    models = []
+    models_lgbm = []
     for model_path in glob.glob(f"{model_dir}/*model*.pickle"):
         with open(model_path, "rb") as f:
-            models.append(pickle.load(f))
+            models_lgbm.append(pickle.load(f))
+    models_nn = []
+    for model_path in glob.glob(f"{model_dir}/best_nn*"):
+        models_nn.append(load_model(model_path))
 
     # load feature_factory_manager
     logger = get_logger()
@@ -91,6 +96,8 @@ def run(debug,
     df_test_prev = pd.DataFrame()
     answered_correctlies = []
     user_answers = []
+    cols_nn = pd.read_csv(f"{model_dir}/nn_use_feature.csv")["feature"].values
+    cols_nn = [x.replace(" ", "_") for x in cols_nn]
     i = 0
     t = time.time()
     for (df_test, df_sample_prediction) in iter_test:
@@ -106,7 +113,7 @@ def run(debug,
         if debug:
             update_record = 1
         else:
-            update_record = 30
+            update_record = 50
         if len(df_test_prev) > update_record:
             logger.info("fitting...")
             df_test_prev["answered_correctly"] = answered_correctlies
@@ -139,17 +146,25 @@ def run(debug,
 
         df = feature_factory_manager.partial_predict(df_test)
         df.columns = [x.replace(" ", "_") for x in df.columns]
-        logger.info(f"predict...")
 
         # predict
-        predicts = []
-        cols = models[0].feature_name()
-        w_df = df[cols]
-        for model in models:
-            predicts.append(model.predict(w_df))
+        logger.info(f"predict lgbm...")
+        predicts_lgbm = []
+        cols = models_lgbm[0].feature_name()
+        w_df = df[cols].fillna(-1)
+        for model in models_lgbm:
+            predicts_lgbm.append(model.predict(w_df))
+        pred_lgbm = np.array(predicts_lgbm).mean(axis=0)
+
+        logger.info(f"predict nn...")
+        predicts_nn = []
+        w_df = df[cols_nn]
+        for model in models_nn:
+            predicts_nn.append(model.predict(w_df.values).flatten())
+        pred_nn = np.array(predicts_nn).mean(axis=0)
 
         logger.info("other...")
-        df["answered_correctly"] = np.array(predicts).transpose().mean(axis=1)
+        df["answered_correctly"] = pred_lgbm * 0.5 + pred_nn * 0.5
         df_sample_prediction = pd.merge(df_sample_prediction[["row_id"]],
                                         df[["row_id", "answered_correctly"]],
                                         how="inner")

@@ -6,6 +6,7 @@ from logging import Logger
 import time
 import pickle
 import os
+import glob
 
 tqdm.tqdm.pandas()
 
@@ -928,15 +929,21 @@ class PreviousAnswer(FeatureFactory):
 
 class PreviousAnswer2(FeatureFactory):
     feature_name_base = "previous_answer"
-
+    pickle_path = "../input/feature_engineering/previous_answer2_{}.pickle"
     def __init__(self,
                  groupby: str,
                  column: str,
+                 is_debug: bool = False,
+                 repredict: bool = False,
+                 model_id: int = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
         self.groupby = groupby
         self.column = column
+        self.is_debug = is_debug
         self.logger = logger
+        self.repredict = repredict
+        self.model_id = model_id
         self.is_partial_fit = is_partial_fit
         self.data_dict = {}
 
@@ -946,15 +953,15 @@ class PreviousAnswer2(FeatureFactory):
                                        Dict[str, FeatureFactory]]):
 
         for user_id, w_df in group[["content_id", "answered_correctly"]]:
-            content_id = w_df["content_id"].values[::-1]
-            answer = w_df["answered_correctly"].values[::-1]
+            content_id = w_df["content_id"].values[::-1].tolist()
+            answer = w_df["answered_correctly"].values[::-1].tolist()
             if user_id not in self.data_dict:
                 self.data_dict[user_id] = {}
-                self.data_dict[user_id]["content_id"] = [content_id]
-                self.data_dict[user_id]["answered_correctly"] = [answer]
+                self.data_dict[user_id]["content_id"] = content_id
+                self.data_dict[user_id]["answered_correctly"] = answer
             else:
-                self.data_dict[user_id]["content_id"] = [content_id] + self.data_dict[user_id]["content_id"]
-                self.data_dict[user_id]["answered_correctly"] = [answer] + self.data_dict[user_id]["answered_correctly"]
+                self.data_dict[user_id]["content_id"] = content_id + self.data_dict[user_id]["content_id"][:len(content_id)]
+                self.data_dict[user_id]["answered_correctly"] = answer + self.data_dict[user_id]["answered_correctly"][:len(content_id)]
         return self
 
     def all_predict(self,
@@ -981,8 +988,26 @@ class PreviousAnswer2(FeatureFactory):
                     ret.append(w_ret[0])
             return ret
         self.logger.info(f"previous_encoding_all_{self.column}")
-        df[f"previous_answer_{self.column}"] = df.groupby(self.column)["answered_correctly"].shift(1).fillna(-99).astype("int8")
-        df[f"previous_answer_index_{self.column}"] = df.groupby("user_id")["content_id"].progress_transform(f).fillna(-99).astype("int16")
+        pickle_path = self.pickle_path.format(self.model_id)
+        if not self.repredict and os.path.isfile(pickle_path) and not self.is_debug:
+            self.logger.info(f"load_previous_encoding_pickle")
+            with open(pickle_path, "rb") as f:
+                w_df = pickle.load(f)
+            for col in w_df.columns:
+                df[col] = w_df[col].values
+        else:
+            prev_answer = df.groupby(self.column)["answered_correctly"].shift(1).fillna(-99).astype("int8")
+            prev_answer_index = df.groupby("user_id")["content_id"].progress_transform(f).fillna(-99).astype("int16")
+            df[f"previous_answer_{self.column}"] = prev_answer
+            df[f"previous_answer_index_{self.column}"] = prev_answer_index
+
+            # save feature
+            if not self.is_debug:
+                w_df = pd.DataFrame()
+                with open(pickle_path, "wb") as f:
+                    w_df[f"previous_answer_{self.column}"] = prev_answer
+                    w_df[f"previous_answer_index_{self.column}"] = prev_answer_index
+                    pickle.dump(w_df, f)
 
         return df
 
@@ -996,15 +1021,29 @@ class PreviousAnswer2(FeatureFactory):
                 return None
 
         def f(x):
+            """
+            index, answered_correctlyを辞書から検索する
+            data_dictはリアルタイム更新する。ただし、answered_correctlyはわからないのでnp.nanとしておく
+            :param x:
+            :return:
+            """
             user_id = x[0]
             content_id = x[1]
             if user_id not in self.data_dict:
+                self.data_dict[user_id] = {}
+                self.data_dict[user_id]["content_id"] = [content_id]
+                self.data_dict[user_id]["answered_correctly"] = [None]
                 return [None, None]
             last_idx = get_index(self.data_dict[user_id]["content_id"], content_id) # listは逆順になっているので
+
             if last_idx is None: # user_idに対して過去content_idの記録がない
-                return [None, None]
+                ret = [None, None]
             else:
-                return [self.data_dict[user_id]["answered_correctly"][last_idx], last_idx]
+                ret = [self.data_dict[user_id]["answered_correctly"][last_idx], last_idx]
+            self.data_dict[user_id]["content_id"] = [content_id] + self.data_dict[user_id]["content_id"]
+            self.data_dict[user_id]["answered_correctly"] = [None] + self.data_dict[user_id]["answered_correctly"]
+            return ret
+
         ary = [f(x) for x in df[[self.groupby, self.column]].values]
         ans_ary = [x[0] for x in ary]
         index_ary = [x[1] for x in ary]
@@ -1019,26 +1058,34 @@ class PreviousAnswer2(FeatureFactory):
 class QuestionLectureTableEncoder(FeatureFactory):
     feature_name_base = "previous_answer"
     question_lecture_dict_path = "../feature_engineering/question_lecture_dict.pickle"
+    pickle_path = "../input/feature_engineering/ql_table_{}.pickle"
 
     def __init__(self,
+                 repredict: bool = False,
+                 model_id: int = None,
                  question_lecture_dict: Union[Dict[tuple, float], None] = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
         if question_lecture_dict is None:
             if not os.path.isfile(self.question_lecture_dict_path):
                 print("make_new_dict")
-                df = pd.read_pickle("../input/riiid-test-answer-prediction/split10/train_0.pickle")
+                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
+                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
+                                    ["user_id", "content_id", "content_type_id", "answered_correctly"]] for f in files])
                 self.make_dict(df)
             with open(self.question_lecture_dict_path, "rb") as f:
                 self.question_lecture_dict = pickle.load(f)
         else:
             self.question_lecture_dict = question_lecture_dict
+        self.repredict = repredict
+        self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
         self.data_dict = {}
 
     def make_dict(self,
                   df: pd.DataFrame,
+                  threshold: int = 300,
                   test_mode: bool = False,
                   output_dir: str = None):
         """
@@ -1074,8 +1121,11 @@ class QuestionLectureTableEncoder(FeatureFactory):
             df["lectured"] = df.groupby(["user_id"])["content_id"].transform(f, **{"content_id": lecture})
             for question, w_df in df[df["content_type_id"] == 0].groupby("content_id"):
                 w_dict = w_df.groupby("lectured")["answered_correctly"].mean().to_dict()
+                w_dict_size = w_df.groupby("lectured").size()
 
-                if 0 not in w_dict or 1 not in w_dict:
+                if 0 not in w_dict or 1 not in w_dict or len(w_df) < threshold:
+                    ret_dict[(question, lecture)] = 0
+                elif w_dict_size[0] < threshold or w_dict_size[1] < threshold:
                     ret_dict[(question, lecture)] = 0
                 else:
                     score = w_dict[1] - w_dict[0]
@@ -1131,7 +1181,24 @@ class QuestionLectureTableEncoder(FeatureFactory):
             w_df["list_lectures"] = w_df.groupby("user_id")["w_content_id"].transform(make_lecture_list)
             score = [calc_score(x) for x in w_df[["list_lectures", "content_id", "content_type_id"]].values]
             return score
-        df["question_lecture_score"] = df.groupby("user_id")["content_id"].progress_transform(f).astype("float32")# "content_id"はなんでもいい
+        pickle_path = self.pickle_path.format(self.model_id)
+        self.logger.info(f"ql_score_encoding")
+        if not self.repredict and os.path.isfile(pickle_path):
+            self.logger.info(f"load_ql_score_pickle")
+            with open(pickle_path, "rb") as f:
+                w_df = pickle.load(f)
+            for col in w_df.columns:
+                df[col] = w_df[col].values
+        else:
+            ql_score = df.groupby("user_id")["content_id"].progress_transform(f).astype("float32")
+            df["question_lecture_score"] = ql_score
+
+            # save feature
+            w_df = pd.DataFrame()
+            with open(pickle_path, "wb") as f:
+                w_df["question_lecture_score"] = ql_score
+                pickle.dump(w_df, f)
+
         return df
 
     def partial_predict(self,

@@ -6,9 +6,9 @@ if os.path.isdir("riiid_code"):
     shutil.rmtree("riiid_code")
 os.makedirs("riiid_code/pretrained")
 
-for f in glob.glob("output/ex_048/20201105073920/*"):
-    if "csv" in f:
-        continue
+for f in glob.glob("output/ex_052/20201107192518/*"):
+    if os.path.isdir(f):
+        shutil.copytree(f, f"riiid_code/pretrained/{os.path.basename(f)}")
     else:
         shutil.copyfile(f, f"riiid_code/pretrained/{os.path.basename(f)}")
 shutil.copytree("experiment", "riiid_code/experiment/")

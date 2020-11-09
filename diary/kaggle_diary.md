@@ -243,7 +243,7 @@
 
 # 2020/11/4
 ## experiment
-* ex_047: parameter tuned & lr=0.1
+* ex_047: parameter tuned & lr=0.1 -> CV+0.001だがLBあまりかわらず
 * ex_048: previous_answer(reduce memory)
 * ex_049: reduce features => CV: 0.776 / LB: 0.784(freq=30)
 
@@ -258,7 +258,7 @@
 
 ## EDA
 * ex_052:
-  * PreviousAnswerにindexつける! (ex_048とコード自体はかわらない)
+  * PreviousAnswerにindexつける! (ex_048とコード自体はかわらない) => CV: 0.777(only model-0)
 * 020_previous_xxx
   * part / content_id
     * ![image_24](image_24.png)
@@ -268,4 +268,18 @@
     * ![image_26](image_26.png)
   * shift3_contentid: shift2とおなじ(ちょっとタイムラグあるだけ)
     * ![image_27](image_27.png)
+* 021_lecture-question
+  * shift2_contentidで見つけたquestionとlectureをひも付けて、lectureを受けた人・受けてない人での正解率探す -> やっぱり受けた人のほうが正解率高い
+    * ![image_28](image_28.png)
+
+# 2020/11/8
+## experiment
+* ex_053: question_lecture_map
+* ex_052_2: previous_answerのバグ直して再提出 -> LB: 0.780(down...)
+* ex_054: catboost(feature: ex_052) depth tuning
+
+# 2020/11/9
+## experiment
+* ex_055: indexリアルタイム更新
+* ex_056: indexなしで1回投稿
 </div>
