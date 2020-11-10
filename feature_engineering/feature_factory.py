@@ -1015,7 +1015,7 @@ class PreviousAnswer2(FeatureFactory):
                         df: pd.DataFrame):
         def get_index(l, x):
             try:
-                ret = l.index(x)
+                ret = l[:500].index(x)
                 return ret
             except ValueError:
                 return None
