@@ -616,7 +616,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
         logger = get_logger()
         feature_factory_dict = {
             "user_id": {
-                "PreviousAnswer": PreviousAnswer2(groupby="user_id", column="content_id", repredict=True)
+                "PreviousAnswer": PreviousAnswer2(groupby="user_id", column="content_id", repredict=True, is_debug=True)
             }
         }
         agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
@@ -633,8 +633,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
         # fit - partial_predict
-        for i in range(len(df)):
-            agger.fit(df.iloc[i:i+1])
+        agger.partial_predict(df)
+        agger.fit(df)
 
         df_test = pd.DataFrame({"user_id": [15, 123, 1222],
                                 "content_id": [15, 123, 1222],
@@ -653,7 +653,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
         logger = get_logger()
         feature_factory_dict = {
             "user_id": {
-                "PreviousAnswer": PreviousAnswer2(groupby="user_id", column="content_id", repredict=True)
+                "PreviousAnswer": PreviousAnswer2(groupby="user_id", column="content_id", repredict=True, is_debug=True)
             }
         }
         agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
@@ -669,14 +669,10 @@ class PartialAggregatorTestCase(unittest.TestCase):
         df_expect["previous_answer_index_content_id"] = df_expect["previous_answer_index_content_id"].fillna(-99).astype("int16")
         df_actual = agger.all_predict(df)
 
-        print(df_actual.columns)
-
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
-        # fit - partial_predict
-        for i in range(len(df)//2):
-            agger.fit(df.iloc[i*2:(i+1)*2])
-        print(agger.feature_factory_dict["user_id"]["PreviousAnswer"].data_dict)
+        agger.partial_predict(df)
+        agger.fit(df)
 
         df_test = pd.DataFrame({"user_id": [1, 1, 2, 2, 2, 1],
                                 "content_id": [1, 2, 1, 3, 2, 1]})
@@ -692,9 +688,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
         df_test = pd.DataFrame({"user_id": [1, 1, 2, 2, 2, 1],
                                 "content_id": [1, 2, 1, 3, 2, 1],
                                 "answered_correctly": [1, 1, 1, 0, 0, 0]})
-
-        for i in range(len(df_test)//2):
-            agger.fit(df_test.iloc[i*2:(i+1)*2])
+        agger.partial_predict(df_test)
+        agger.fit(df_test)
 
         df_test = pd.DataFrame({"user_id": [1, 1, 2],
                                 "content_id": [1, 2, 3]})
