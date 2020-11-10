@@ -1065,7 +1065,8 @@ class QuestionLectureTableEncoder(FeatureFactory):
                  model_id: int = None,
                  question_lecture_dict: Union[Dict[tuple, float], None] = None,
                  logger: Union[Logger, None] = None,
-                 is_partial_fit: bool = False):
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
         if question_lecture_dict is None:
             if not os.path.isfile(self.question_lecture_dict_path):
                 print("make_new_dict")
@@ -1081,6 +1082,7 @@ class QuestionLectureTableEncoder(FeatureFactory):
         self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
         self.data_dict = {}
 
     def make_dict(self,
@@ -1183,7 +1185,7 @@ class QuestionLectureTableEncoder(FeatureFactory):
             return score
         pickle_path = self.pickle_path.format(self.model_id)
         self.logger.info(f"ql_score_encoding")
-        if not self.repredict and os.path.isfile(pickle_path):
+        if not self.repredict and os.path.isfile(pickle_path) and not self.is_debug:
             self.logger.info(f"load_ql_score_pickle")
             with open(pickle_path, "rb") as f:
                 w_df = pickle.load(f)
@@ -1195,9 +1197,10 @@ class QuestionLectureTableEncoder(FeatureFactory):
 
             # save feature
             w_df = pd.DataFrame()
-            with open(pickle_path, "wb") as f:
-                w_df["question_lecture_score"] = ql_score
-                pickle.dump(w_df, f)
+            if not self.is_debug:
+                with open(pickle_path, "wb") as f:
+                    w_df["question_lecture_score"] = ql_score
+                    pickle.dump(w_df, f)
 
         return df
 
@@ -1305,6 +1308,7 @@ class FeatureFactoryManager:
         """
         for dicts in self.feature_factory_dict.values():
             for factory in dicts.values():
+                self.logger.info(factory)
                 df = factory.partial_predict(df)
         return df
 
