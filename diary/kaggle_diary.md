@@ -280,6 +280,44 @@
 
 # 2020/11/9
 ## experiment
-* ex_055: indexリアルタイム更新
-* ex_056: indexなしで1回投稿
+* ex_052_2: indexリアルタイム更新にして再度提出 -> LB: 0.780...
+* ex_055_0: PreviousAnswer、indexあり版でindex消すとCV0.770, indexなし版CV0.773
+  * なぜ？データ確認する -> user_idのみでgroupbyしてたので、単純に「前の問題に正解してるか」になってた
+* ex_055_0_1: answer_idxもバグ確認
+* ex_055: indexなしで1回subする(=exp048)
+  * 原因がindexなのかanswerなのかで切り分けたい+スコア更新したい
+* ex_056: ex_055+cat&lgbm
+* ex_057: ex_056+index
+  * lgbm CV: 0.779 -> LB: 0.786
+  * cat CV: 0.780 -> LB: 0.783
+  * lgbm+cat CV: 0.781(たぶん)
+
+# 2020/11/10
+## eda
+* 022_previous_content
+  * previous_content_type_id 1個前がlectureのときのほうが正解率高い -> 特徴に追加
+    * ![image_29](image_29.png)
+  * 更に見ていくと, content_type_id=[1, 0]の順番でのconunt_encoderで、数が多いほど正解率が高い。コレは使えそう
+    * ![image_30](image_30.png)
+
+# 2020/11/11
+## experiment
+* ex_059: depth tuning
+* ex_060: ex_057+previous_lecture -> CV: 0.7770(変化なし?)
+* ex_061: ex_060+initial_weight/initial_score -> CV: 0.777(ex_060とあんま変わらず)
+* ex_062: ex_057+content_level_encoder -> CV: 0.7778(first model)
+* ex_057とex_049でuser_rate系の値が違う
+  * df.sum(), df.values.sum()、後者はnp.nanがあるとsumもnanになるよ！
+  * ex_057_2.pyでfeature_factory_manager作り直し
+
+# 2020/11/12
+## experiment
+* ex_063: ex_062 + groupby(user_id).mean(content_level)
+  * TODO: groupby(content_id).mean(user_id)もしたいけど、ライブラリの制約でできねぇ…改造するか
+* ex_064: ex_063のdf_train->fit vs all_predict
+  * データの順番変えたらそりゃ結果かわるよね -> データの順番も完全一致させる？ -> いや、そこはあわせてたっぽい
+
+
+
+
 </div>
