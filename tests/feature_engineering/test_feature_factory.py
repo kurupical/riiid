@@ -14,7 +14,8 @@ from feature_engineering.feature_factory import \
     PreviousAnswer, \
     CategoryLevelEncoder, \
     PreviousAnswer2, \
-    QuestionLectureTableEncoder
+    QuestionLectureTableEncoder, \
+    PreviousLecture
 from experiment.common import get_logger
 import pickle
 import os
@@ -775,6 +776,40 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         self.assertEqual(expect, actual)
         os.remove(pickle_dir)
+
+    def test_previous_lecture(self):
+        logger = get_logger()
+
+        feature_factory_dict = {
+            "user_id": {
+                "PreviousLecture": PreviousLecture(column="content_id")
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        df = pd.DataFrame({"user_id": [1, 1, 1, 2, 2, 2],
+                           "content_id": [0, 1, 2, 3, 4, 5],
+                           "content_type_id": [0, 1, 1, 0, 1, 0]})
+
+        df_expect = pd.DataFrame({"previous_lecture": [np.nan, np.nan, 1, np.nan, np.nan, 4]})
+        df_expect = df_expect.fillna(-1).astype("int8")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        df = pd.DataFrame({"user_id": [1, 1, 2, 2, 3, 3],
+                           "content_id": [6, 7, 8, 9, 10, 11],
+                           "content_type_id": [1, 1, 0, 1, 1, 1]})
+
+        df_expect = pd.DataFrame({"previous_lecture": [2, 6, np.nan, np.nan, np.nan, 10]})
+        df_expect = df_expect.fillna(-1).astype("int8")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
 if __name__ == "__main__":
     unittest.main()

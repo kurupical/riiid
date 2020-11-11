@@ -623,7 +623,7 @@ class UserLevelEncoder2(FeatureFactory):
         initial_bunshi = self.initial_score * self.initial_weight
 
         for key, df in group:
-            rate = (df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]).values
+            rate = (df["answered_correctly"] - df[f"target_enc_{self.vs_column}"])
             if key not in self.data_dict:
                 self.data_dict[key] = {}
                 self.data_dict[key][f"user_level_{self.vs_column}"] = (df[f"target_enc_{self.vs_column}"].sum() + initial_bunshi) / (len(df) + self.initial_weight)
@@ -960,8 +960,8 @@ class PreviousAnswer2(FeatureFactory):
                 self.data_dict[user_id]["content_id"] = content_id
                 self.data_dict[user_id]["answered_correctly"] = answer
             else:
-                self.data_dict[user_id]["content_id"] = content_id + self.data_dict[user_id]["content_id"][len(content_id):]
-                self.data_dict[user_id]["answered_correctly"] = answer + self.data_dict[user_id]["answered_correctly"][len(content_id):]
+                self.data_dict[user_id]["content_id"] = content_id + self.data_dict[user_id]["content_id"][len(content_id):][:3000]
+                self.data_dict[user_id]["answered_correctly"] = answer + self.data_dict[user_id]["answered_correctly"][len(content_id):][:3000]
         return self
 
     def all_predict(self,
@@ -1015,7 +1015,7 @@ class PreviousAnswer2(FeatureFactory):
                         df: pd.DataFrame):
         def get_index(l, x):
             try:
-                ret = l[:500].index(x)
+                ret = l.index(x)
                 return ret
             except ValueError:
                 return None
@@ -1223,6 +1223,69 @@ class QuestionLectureTableEncoder(FeatureFactory):
         return df
 
 
+class PreviousLecture(FeatureFactory):
+    """
+    user_idごとに前回のcontent_idを出す。
+    前回がquestion(content_type_id==0)の場合は、ゼロとする
+
+    EDA: 022_previous_contentからinspire
+    """
+
+    def fit(self,
+            group,
+            feature_factory_dict: Dict[Union[str, tuple],
+                                       Dict[str, object]]):
+
+        for user_id, w_df in group:
+            series = w_df.iloc[-1]
+            if series["content_type_id"] == 0:
+                self.data_dict[user_id] = None
+            else:
+                self.data_dict[user_id] = series["content_id"]
+        return self
+
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        def f(content_id: int, content_type_id: int):
+            if content_type_id == 0:
+                return np.nan
+            else:
+                return content_id
+
+        df_prev = df.groupby("user_id")[["content_id", "content_type_id"]].shift(1)
+        df["previous_lecture"] = [f(x[0], x[1]) for x in df_prev.values]
+        df["previous_lecture"] = df["previous_lecture"].fillna(-1).astype("int8")
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        """
+        リアルタイムfit
+        :param df:
+        :return:
+        """
+
+        def f(user_id, content_id, content_type_id):
+            if user_id not in self.data_dict:
+                ret = None
+            else:
+                ret = self.data_dict[user_id]
+
+            # update dict
+            if content_type_id == 0:
+                self.data_dict[user_id] = None
+            else:
+                self.data_dict[user_id] = content_id
+            return ret
+
+        ret = [f(x[0], x[1], x[2]) for x in df[["user_id", "content_id", "content_type_id"]].values]
+        df["previous_lecture"] = ret
+        df["previous_lecture"] = df["previous_lecture"].fillna(-1).astype("int8")
+
+        return df
+
+
 class FeatureFactoryManager:
     def __init__(self,
                  feature_factory_dict: Dict[Union[str, tuple],
@@ -1308,7 +1371,6 @@ class FeatureFactoryManager:
         """
         for dicts in self.feature_factory_dict.values():
             for factory in dicts.values():
-                self.logger.info(factory)
                 df = factory.partial_predict(df)
         return df
 
