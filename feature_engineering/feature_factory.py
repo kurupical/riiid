@@ -1286,6 +1286,89 @@ class PreviousLecture(FeatureFactory):
         return df
 
 
+
+class ContentLevelEncoder(FeatureFactory):
+    def __init__(self,
+                 vs_column: Union[str, list],
+                 initial_score: float =.0,
+                 initial_weight: float = 0,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.column = "content_id"
+        self.vs_column = vs_column
+        self.initial_score = initial_score
+        self.initial_weight = initial_weight
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.data_dict = {}
+
+    def fit(self,
+            group,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        initial_bunshi = self.initial_score * self.initial_weight
+
+        for key, df in group:
+            rate = (df["answered_correctly"] - df[f"target_enc_{self.vs_column}"])
+            if key not in self.data_dict:
+                self.data_dict[key] = {}
+                self.data_dict[key][f"content_level_{self.vs_column}"] = (df[f"target_enc_{self.vs_column}"].sum() + initial_bunshi) / (len(df) + self.initial_weight)
+                self.data_dict[key][f"content_rate_sum_{self.vs_column}"] = rate.sum()
+                self.data_dict[key][f"content_rate_mean_{self.vs_column}"] = rate.mean()
+            else:
+                content_level = self.data_dict[key][f"content_level_{self.vs_column}"]
+                content_rate_sum = self.data_dict[key][f"content_rate_sum_{self.vs_column}"]
+
+                count = feature_factory_dict["content_id"]["CountEncoder"].data_dict[key] + self.initial_weight
+
+                # パフォーマンス対策:
+                # df["answered_correctly"].sum()
+                ans_sum = df[f"target_enc_{self.vs_column}"].sum()
+                rate_sum = rate.sum()
+
+                self.data_dict[key][f"content_level_{self.vs_column}"] = ((count - len(df)) * content_level + ans_sum) / count
+                self.data_dict[key][f"content_rate_sum_{self.vs_column}"] = content_rate_sum + rate_sum
+                self.data_dict[key][f"content_rate_mean_{self.vs_column}"] = (content_rate_sum + rate_sum) / count
+        return self
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        def f_shift1_mean(series):
+            return (series.shift(1).cumsum() + self.initial_weight * self.initial_score) / (np.arange(len(series)) + self.initial_weight)
+
+        def f_shift1_sum(series):
+            return (series.shift(1).cumsum() + self.initial_weight * self.initial_score)
+
+        def f(series):
+            return (series.cumsum() + self.initial_weight * self.initial_score) / (np.arange(len(series)) + 1 + self.initial_weight)
+
+        df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]
+        df[f"content_rate_sum_{self.vs_column}"] = df.groupby("content_id")["rate"].transform(f_shift1_sum).astype("float32")
+        df[f"content_rate_mean_{self.vs_column}"] = df.groupby("content_id")["rate"].transform(f_shift1_mean).astype("float32")
+        df[f"content_level_{self.vs_column}"] = df.groupby("content_id")[f"target_enc_{self.vs_column}"].transform(f).astype("float32")
+        df[f"diff_content_level_target_enc_{self.vs_column}"] = \
+            df[f"content_level_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]
+        df[f"diff_rate_mean_target_emc_{self.vs_column}"] = \
+            df[f"content_rate_mean_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]
+
+        df = df.drop("rate", axis=1)
+        return df
+
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        for col in [f"content_rate_sum_{self.vs_column}",
+                    f"content_rate_mean_{self.vs_column}",
+                    f"content_level_{self.vs_column}"]:
+            df = self._partial_predict2(df, column=col)
+        df[f"diff_content_level_target_enc_{self.vs_column}"] = \
+            (df[f"content_level_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]).astype("float32")
+        df[f"diff_rate_mean_target_emc_{self.vs_column}"] = \
+            (df[f"content_rate_mean_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]).astype("float32")
+        return df
+
+
+
 class FeatureFactoryManager:
     def __init__(self,
                  feature_factory_dict: Dict[Union[str, tuple],
@@ -1325,6 +1408,7 @@ class FeatureFactoryManager:
         :param first_fit: データ取り込み後最初のfitをするときはTrue.
         :return:
         """
+        # partial_fit
         for column, dicts in self.feature_factory_dict.items():
             # カラム(ex: user_idなど)ごとに処理
             if column == "postprocess":
@@ -1335,15 +1419,34 @@ class FeatureFactoryManager:
                 group = df.groupby(column)
             else:
                 raise ValueError
+
             for factory in dicts.values():
-                df = factory.make_feature(df)
-                factory.fit(group=group,
-                            feature_factory_dict=self.feature_factory_dict)
                 if factory.is_partial_fit:
+                    df = factory.make_feature(df)
+                    factory.fit(group=group,
+                                feature_factory_dict=self.feature_factory_dict)
                     if not is_first_fit:
                         df = factory.partial_predict(df)
                     else:
                         df = factory.all_predict(df)
+
+        # not partial_fit
+        for column, dicts in self.feature_factory_dict.items():
+            # カラム(ex: user_idなど)ごとに処理
+            if column == "postprocess":
+                continue
+            if type(column) == tuple:
+                group = df.groupby(list(column))
+            elif type(column) == str:
+                group = df.groupby(column)
+            else:
+                raise ValueError
+
+            for factory in dicts.values():
+                if not factory.is_partial_fit:
+                    factory.fit(group=group,
+                                feature_factory_dict=self.feature_factory_dict)
+
     def fit_predict(self,
                     df: pd.DataFrame):
         self.fit(df)
@@ -1357,9 +1460,17 @@ class FeatureFactoryManager:
         :param df:
         :return:
         """
+        # partial_predictあり
         for dicts in self.feature_factory_dict.values():
             for factory in dicts.values():
-                df = factory.all_predict(df=df)
+                if factory.is_partial_fit:
+                    df = factory.all_predict(df=df)
+
+        # partial_predictなし
+        for dicts in self.feature_factory_dict.values():
+            for factory in dicts.values():
+                if not factory.is_partial_fit:
+                    df = factory.all_predict(df=df)
         return df
 
     def partial_predict(self,
@@ -1369,8 +1480,17 @@ class FeatureFactoryManager:
         :param df:
         :return:
         """
+        # partial_predictあり
         for dicts in self.feature_factory_dict.values():
             for factory in dicts.values():
-                df = factory.partial_predict(df)
+                if factory.is_partial_fit:
+                    df = factory.partial_predict(df)
+
+        # partial_predictなし
+        for dicts in self.feature_factory_dict.values():
+            for factory in dicts.values():
+                if not factory.is_partial_fit:
+                    df = factory.partial_predict(df)
+
         return df
 
