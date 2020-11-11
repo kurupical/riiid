@@ -103,8 +103,8 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
     print(df2_train)
     feature_factory_manager.fit(df2.iloc[train_idx], is_first_fit=True)
     df2_val = []
-    for i in tqdm.tqdm(range(len(val_idx)//20)):
-        w_df = df2.iloc[val_idx[i*20:(i+1)*20]]
+    for i in tqdm.tqdm(range(len(val_idx)//3)):
+        w_df = df2.iloc[val_idx[i*3:(i+1)*3]]
         df2_val.append(feature_factory_manager.partial_predict(w_df))
         feature_factory_manager.fit(w_df)
     df2_val = pd.concat(df2_val)
@@ -112,8 +112,8 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # df_val.to_csv("exp032_all.csv", index=False)
-    # df2_val.to_csv("exp032_partial.csv", index=False)
+    df_val.to_csv("exp055_all.csv", index=False)
+    df2_val.to_csv("exp055_partial.csv", index=False)
     params = {
         'objective': 'binary',
         'num_leaves': 32,
