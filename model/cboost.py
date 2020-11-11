@@ -58,8 +58,7 @@ def train_catboost_cv(df: pd.DataFrame,
         mlflow.log_metric("auc_val", auc_val)
         mlflow.end_run()
 
-    with open(f"{output_dir}/model_{model_id}_catboost.pickle", "wb") as f:
-        pickle.dump(model, f)
+    model.save_model(f"{output_dir}/model_{model_id}_catboost")
 
     df_oof = pd.DataFrame()
     df_oof["row_id"] = df.loc[val_idx].index
