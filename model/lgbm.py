@@ -104,7 +104,7 @@ def train_lgbm_cv(df: pd.DataFrame,
 
     df_imp["importance"] = model.feature_importance("gain") / model.feature_importance("gain").sum()
     df_imp.sort_values("importance", ascending=False).to_csv(f"{output_dir}/imp_{model_id}.csv")
-    with open(f"{output_dir}/model_{model_id}.pickle", "wb") as f:
+    with open(f"{output_dir}/model_{model_id}_lgbm.pickle", "wb") as f:
         pickle.dump(model, f)
 
     df_oof = pd.DataFrame()
