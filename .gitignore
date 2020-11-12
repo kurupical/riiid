@@ -31,3 +31,9 @@ experiment/3\.csv
 experiment/4\.csv
 
 experiment/catboost_info/
+
+feature_engineering/question_lecture_dict_backup\.pickle
+
+feature_engineering/question_lecture_dict\.pickle
+
+catboost_info/

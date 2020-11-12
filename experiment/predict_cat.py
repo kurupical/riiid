@@ -25,9 +25,11 @@ from logging import Logger, StreamHandler, Formatter
 import shutil
 import time
 import warnings
+from catboost import CatBoostClassifier
+
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/ex_065/20201112234833"
+model_dir = "../output/ex_057/20201110093556"
 
 data_types_dict = {
     'row_id': 'int64',
@@ -72,10 +74,13 @@ def run(debug,
                                     "tag": "int16",
                                     "part": "int8"})
     # model loading
-    models = []
-    for model_path in glob.glob(f"{model_dir}/*model*.pickle"):
+    models_lgbm = []
+    for model_path in glob.glob(f"{model_dir}/*lgbm*.pickle"):
         with open(model_path, "rb") as f:
-            models.append(pickle.load(f))
+            models_lgbm.append(pickle.load(f))
+    models_cat = []
+    for model_path in glob.glob(f"{model_dir}/*catboost"):
+        models_cat.append(CatBoostClassifier().load_model(model_path, format="cbm"))
 
     # load feature_factory_manager
     logger = get_logger()
@@ -138,18 +143,19 @@ def run(debug,
         df_test["prior_question_had_explanation"] = df_test["prior_question_had_explanation"].astype("float16").fillna(-1).astype("int8")
 
         df = feature_factory_manager.partial_predict(df_test)
-        df.columns = [x.replace(" ", "_") for x in df.columns]
-        logger.info(f"predict...")
 
         # predict
-        predicts = []
-        cols = models[0].feature_name()
+        cols = models_cat[0].feature_names_
         w_df = df[cols]
-        for model in models:
-            predicts.append(model.predict(w_df))
+
+        logger.info(f"predict cat...")
+        predicts_cat = []
+        for model in models_cat:
+            predicts_cat.append(model.predict_proba(w_df)[:, 1].flatten())
+        pred_cat = np.array(predicts_cat).mean(axis=0)
 
         logger.info("other...")
-        df["answered_correctly"] = np.array(predicts).transpose().mean(axis=1)
+        df["answered_correctly"] = pred_cat
         df_sample_prediction = pd.merge(df_sample_prediction[["row_id"]],
                                         df[["row_id", "answered_correctly"]],
                                         how="inner")
@@ -159,5 +165,5 @@ def run(debug,
             df_test_prev.to_csv(f"{i}.csv")
 
 if __name__ == "__main__":
-    run(debug=True,
+    run(debug=False,
         model_dir=model_dir)
