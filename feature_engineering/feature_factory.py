@@ -201,38 +201,39 @@ class TargetEncoder(FeatureFactory):
             feature_factory_dict: Dict[Union[str, tuple],
                                        Dict[str, FeatureFactory]]):
 
+        def f(series):
+            return series.notnull().sum()
         initial_bunshi = self.initial_score * self.initial_weight
         sum_dict = group["answered_correctly"].sum().to_dict()
-        size_dict = group.size().to_dict()
+        size_dict = group["answered_correctly"].apply(f).astype("int32").to_dict()
 
         for key in sum_dict.keys():
             w_sum = sum_dict[key]
             w_size = size_dict[key]
 
+            if w_size == 0:
+
+                continue
             if key not in self.data_dict:
-                self.data_dict[key] = (w_sum + initial_bunshi)/ (w_size + self.initial_weight)
+                self.data_dict[key] = {}
+                self.data_dict[key][f"target_enc_{self.column}"] = (w_sum + initial_bunshi) / (w_size + self.initial_weight)
+                self.data_dict[key]["size"] = w_size
             else:
-                # count_encoderの値は更新済のため、
-                # count = 4, len(df) = 1の場合、もともと3件あって1件が足されたとかんがえる
-                if type(self.column) == list:
-                    count = feature_factory_dict[tuple(self.column)]["CountEncoder"].data_dict[key] + self.initial_weight
-                elif type(self.column) == str:
-                    count = feature_factory_dict[self.column]["CountEncoder"].data_dict[key] + self.initial_weight
-                else:
-                    raise ValueError
-                target_enc = self.data_dict[key]
+                target_enc = self.data_dict[key][f"target_enc_{self.column}"]
+                count = self.data_dict[key]["size"] + w_size + self.initial_weight
 
                 # パフォーマンス対策:
                 # df["answered_correctly"].sum()
 
-                self.data_dict[key] = \
-                    ((count - w_size) * target_enc + w_sum) / count
+                self.data_dict[key][f"target_enc_{self.column}"] = ((count - w_size) * target_enc + w_sum) / count
+                self.data_dict[key]["size"] = self.data_dict[key]["size"] + w_size
         return self
 
     def all_predict(self,
                     df: pd.DataFrame):
         def f(series):
-            return (series.shift(1).cumsum().fillna(0) + self.initial_weight * self.initial_score) / (np.arange(len(series)) + self.initial_weight)
+            bunshi = series.shift(1).notnull().cumsum() + self.initial_weight
+            return (series.shift(1).fillna(0).cumsum() + self.initial_weight * self.initial_score) / bunshi
 
         self.logger.info(f"target_encoding_all_{self.column}")
 
@@ -241,7 +242,7 @@ class TargetEncoder(FeatureFactory):
 
     def partial_predict(self,
                         df: pd.DataFrame):
-        df = self._partial_predict(df)
+        df = self._partial_predict2(df, column=f"target_enc_{self.column}")
         df[self.make_col_name] = df[self.make_col_name].astype("float32")
         if self.initial_weight > 0:
             df[self.make_col_name] = df[self.make_col_name].fillna(self.initial_score)
@@ -366,7 +367,7 @@ class PartSeparator(FeatureFactory):
 
     def all_predict(self,
                     df: pd.DataFrame):
-        self.logger.info(f"tags_all")
+        self.logger.info(f"part_all")
 
         return self._predict(df)
 
@@ -395,7 +396,7 @@ class UserCountBinningEncoder(FeatureFactory):
 
     def make_feature(self,
                      df: pd.DataFrame):
-        return self._predict(df)
+        return df
 
     def _predict(self,
                  df: pd.DataFrame):
@@ -406,13 +407,13 @@ class UserCountBinningEncoder(FeatureFactory):
 
     def all_predict(self,
                     df: pd.DataFrame):
-        self.logger.info(f"tags_all")
+        self.logger.info(f"usercount_bin_all")
 
-        return self._predict(df)
+        return self._predict(df=df)
 
     def partial_predict(self,
                         df: pd.DataFrame):
-        return self._predict(df)
+        return self._predict(df=df)
 
     def __repr__(self):
         return f"{self.__class__.__name__}"
@@ -446,7 +447,7 @@ class PriorQuestionElapsedTimeDiv10Encoder(FeatureFactory):
 
     def all_predict(self,
                     df: pd.DataFrame):
-        self.logger.info(f"tags_all")
+        self.logger.info(f"prior_question_all")
 
         return self._predict(df)
 
@@ -624,46 +625,53 @@ class UserLevelEncoder2(FeatureFactory):
 
         for key, df in group:
             rate = (df["answered_correctly"] - df[f"target_enc_{self.vs_column}"])
+            rate = rate[rate.notnull()]
+            if len(rate) == 0:
+                continue
             if key not in self.data_dict:
                 self.data_dict[key] = {}
-                self.data_dict[key][f"user_level_{self.vs_column}"] = (df[f"target_enc_{self.vs_column}"].sum() + initial_bunshi) / (len(df) + self.initial_weight)
+                self.data_dict[key][f"user_level_{self.vs_column}"] = (df[f"target_enc_{self.vs_column}"].sum() + initial_bunshi) / (len(rate) + self.initial_weight)
                 self.data_dict[key][f"user_rate_sum_{self.vs_column}"] = rate.sum()
                 self.data_dict[key][f"user_rate_mean_{self.vs_column}"] = rate.mean()
+                self.data_dict[key]["count"] = len(rate)
             else:
                 user_level = self.data_dict[key][f"user_level_{self.vs_column}"]
                 user_rate_sum = self.data_dict[key][f"user_rate_sum_{self.vs_column}"]
 
-                count = feature_factory_dict["user_id"]["CountEncoder"].data_dict[key] + self.initial_weight
+                count = self.data_dict[key]["count"] + len(rate) + self.initial_weight
 
                 # パフォーマンス対策:
                 # df["answered_correctly"].sum()
                 ans_sum = df[f"target_enc_{self.vs_column}"].sum()
                 rate_sum = rate.sum()
-
-                self.data_dict[key][f"user_level_{self.vs_column}"] = ((count - len(df)) * user_level + ans_sum) / count
+                self.data_dict[key][f"user_level_{self.vs_column}"] = ((count - len(rate)) * user_level + ans_sum) / count
                 self.data_dict[key][f"user_rate_sum_{self.vs_column}"] = user_rate_sum + rate_sum
                 self.data_dict[key][f"user_rate_mean_{self.vs_column}"] = (user_rate_sum + rate_sum) / count
+                self.data_dict[key]["count"] = self.data_dict[key]["count"] + len(rate)
         return self
 
     def all_predict(self,
                     df: pd.DataFrame):
+
         def f_shift1_mean(series):
-            return (series.shift(1).cumsum() + self.initial_weight * self.initial_score) / (np.arange(len(series)) + self.initial_weight)
+            bunshi = series.shift(1).notnull().cumsum() + self.initial_weight
+            return (series.shift(1).fillna(0).cumsum() + self.initial_weight * self.initial_score) / bunshi
 
         def f_shift1_sum(series):
-            return (series.shift(1).cumsum() + self.initial_weight * self.initial_score)
+            return (series.shift(1).fillna(0).cumsum() + self.initial_weight * self.initial_score)
 
         def f(series):
-            return (series.cumsum() + self.initial_weight * self.initial_score) / (np.arange(len(series)) + 1 + self.initial_weight)
+            bunshi = series.notnull().cumsum() + self.initial_weight
+            return (series.fillna(0).cumsum() + self.initial_weight * self.initial_score) / bunshi
 
         df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]
         df[f"user_rate_sum_{self.vs_column}"] = df.groupby("user_id")["rate"].transform(f_shift1_sum).astype("float32")
         df[f"user_rate_mean_{self.vs_column}"] = df.groupby("user_id")["rate"].transform(f_shift1_mean).astype("float32")
         df[f"user_level_{self.vs_column}"] = df.groupby("user_id")[f"target_enc_{self.vs_column}"].transform(f).astype("float32")
         df[f"diff_user_level_target_enc_{self.vs_column}"] = \
-            df[f"user_level_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]
+            (df[f"user_level_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]).astype("float32")
         df[f"diff_rate_mean_target_emc_{self.vs_column}"] = \
-            df[f"user_rate_mean_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]
+            (df[f"user_rate_mean_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]).astype("float32")
 
         df = df.drop("rate", axis=1)
         return df
@@ -708,17 +716,18 @@ class CategoryLevelEncoder(FeatureFactory):
         for key, df in group:
             for category, w_df in df.groupby(self.agg_column):
                 rate = w_df["answered_correctly"] - w_df[f"target_enc_{self.vs_columns}"]
+                size = rate.notnull().sum()
                 if key not in self.data_dict:
                     self.data_dict[key] = {}
-                    self.data_dict[key][f"count_{self.agg_column}_{category}"] = len(w_df)
+                    self.data_dict[key][f"count_{self.agg_column}_{category}"] = size
                     self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"] = rate.sum()
                     self.data_dict[key][f"user_rate_mean_{self.agg_column}_{category}"] = rate.mean()
                 elif f"user_rate_sum_{self.agg_column}_{category}" not in self.data_dict[key]:
-                    self.data_dict[key][f"count_{self.agg_column}_{category}"] = len(w_df)
+                    self.data_dict[key][f"count_{self.agg_column}_{category}"] = size
                     self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"] = rate.sum()
                     self.data_dict[key][f"user_rate_mean_{self.agg_column}_{category}"] = rate.mean()
                 else:
-                    self.data_dict[key][f"count_{self.agg_column}_{category}"] += len(w_df)
+                    self.data_dict[key][f"count_{self.agg_column}_{category}"] += size
                     user_rate_sum = self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"]
 
                     count = self.data_dict[key][f"count_{self.agg_column}_{category}"]
@@ -735,6 +744,7 @@ class CategoryLevelEncoder(FeatureFactory):
 
         for category in self.categories:
             df["is_target"] = (df[self.agg_column] == category).astype("uint8")
+            df["is_target"] = df["is_target"] * df[f"target_enc_{self.vs_columns}"].notnull().astype("uint8")
             df["rate"] = (df["answered_correctly"] - df[f"target_enc_{self.vs_columns}"]).fillna(0) * df["is_target"]
             df["size"] = df.groupby("user_id")["is_target"].cumsum().shift(1)
             df[f"user_rate_sum_{self.agg_column}_{category}"] = df.groupby("user_id")["rate"].transform(f_shift1_sum).astype("float32")
@@ -873,7 +883,6 @@ class ShiftDiffEncoder(FeatureFactory):
         :return:
         """
         groupby_values = df[self.groupby].values
-        col_values = df[self.column].values
 
         def f(idx):
             """
@@ -1285,8 +1294,6 @@ class PreviousLecture(FeatureFactory):
 
         return df
 
-
-
 class ContentLevelEncoder(FeatureFactory):
     def __init__(self,
                  vs_column: Union[str, list],
@@ -1310,46 +1317,53 @@ class ContentLevelEncoder(FeatureFactory):
 
         for key, df in group:
             rate = (df["answered_correctly"] - df[f"target_enc_{self.vs_column}"])
+            rate = rate[rate.notnull()]
+            if len(rate) == 0:
+                continue
             if key not in self.data_dict:
                 self.data_dict[key] = {}
-                self.data_dict[key][f"content_level_{self.vs_column}"] = (df[f"target_enc_{self.vs_column}"].sum() + initial_bunshi) / (len(df) + self.initial_weight)
+                self.data_dict[key][f"content_level_{self.vs_column}"] = (df[f"target_enc_{self.vs_column}"].sum() + initial_bunshi) / (len(rate) + self.initial_weight)
                 self.data_dict[key][f"content_rate_sum_{self.vs_column}"] = rate.sum()
                 self.data_dict[key][f"content_rate_mean_{self.vs_column}"] = rate.mean()
+                self.data_dict[key]["count"] = len(rate)
             else:
                 content_level = self.data_dict[key][f"content_level_{self.vs_column}"]
                 content_rate_sum = self.data_dict[key][f"content_rate_sum_{self.vs_column}"]
 
-                count = feature_factory_dict["content_id"]["CountEncoder"].data_dict[key] + self.initial_weight
+                count = self.data_dict[key]["count"] + len(rate) + self.initial_weight
 
                 # パフォーマンス対策:
                 # df["answered_correctly"].sum()
                 ans_sum = df[f"target_enc_{self.vs_column}"].sum()
                 rate_sum = rate.sum()
-
-                self.data_dict[key][f"content_level_{self.vs_column}"] = ((count - len(df)) * content_level + ans_sum) / count
+                self.data_dict[key][f"content_level_{self.vs_column}"] = ((count - len(rate)) * content_level + ans_sum) / count
                 self.data_dict[key][f"content_rate_sum_{self.vs_column}"] = content_rate_sum + rate_sum
                 self.data_dict[key][f"content_rate_mean_{self.vs_column}"] = (content_rate_sum + rate_sum) / count
+                self.data_dict[key]["count"] = self.data_dict[key]["count"] + len(rate)
         return self
 
     def all_predict(self,
                     df: pd.DataFrame):
+
         def f_shift1_mean(series):
-            return (series.shift(1).cumsum() + self.initial_weight * self.initial_score) / (np.arange(len(series)) + self.initial_weight)
+            bunshi = series.shift(1).notnull().cumsum() + self.initial_weight
+            return (series.shift(1).fillna(0).cumsum() + self.initial_weight * self.initial_score) / bunshi
 
         def f_shift1_sum(series):
-            return (series.shift(1).cumsum() + self.initial_weight * self.initial_score)
+            return (series.shift(1).fillna(0).cumsum() + self.initial_weight * self.initial_score)
 
         def f(series):
-            return (series.cumsum() + self.initial_weight * self.initial_score) / (np.arange(len(series)) + 1 + self.initial_weight)
+            bunshi = series.notnull().cumsum() + self.initial_weight
+            return (series.fillna(0).cumsum() + self.initial_weight * self.initial_score) / bunshi
 
         df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]
         df[f"content_rate_sum_{self.vs_column}"] = df.groupby("content_id")["rate"].transform(f_shift1_sum).astype("float32")
         df[f"content_rate_mean_{self.vs_column}"] = df.groupby("content_id")["rate"].transform(f_shift1_mean).astype("float32")
         df[f"content_level_{self.vs_column}"] = df.groupby("content_id")[f"target_enc_{self.vs_column}"].transform(f).astype("float32")
         df[f"diff_content_level_target_enc_{self.vs_column}"] = \
-            df[f"content_level_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]
+            (df[f"content_level_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]).astype("float32")
         df[f"diff_rate_mean_target_emc_{self.vs_column}"] = \
-            df[f"content_rate_mean_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]
+            (df[f"content_rate_mean_{self.vs_column}"] - df[f"target_enc_{self.vs_column}"]).astype("float32")
 
         df = df.drop("rate", axis=1)
         return df
@@ -1422,13 +1436,13 @@ class FeatureFactoryManager:
 
             for factory in dicts.values():
                 if factory.is_partial_fit:
-                    df = factory.make_feature(df)
-                    factory.fit(group=group,
-                                feature_factory_dict=self.feature_factory_dict)
                     if not is_first_fit:
                         df = factory.partial_predict(df)
                     else:
                         df = factory.all_predict(df)
+                    df = factory.make_feature(df)
+                    factory.fit(group=group,
+                                feature_factory_dict=self.feature_factory_dict)
 
         # not partial_fit
         for column, dicts in self.feature_factory_dict.items():
