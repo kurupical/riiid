@@ -1440,6 +1440,76 @@ class FirstColumnEncoder(FeatureFactory):
         return f"{self.__class__.__name__}(key={self.column})"
 
 
+class FirstNAnsweredCorrectly(FeatureFactory):
+    feature_name_base = "first_n"
+    def __init__(self,
+                 n: int,
+                 column: str = "user_id",
+                 split_num: int = 1,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        """
+
+        :param column:
+        :param split_num:
+        :param logger:
+        :param is_partial_fit:
+        :param is_all_fit:
+            fit時のflag. fitは処理時間削減のため通常150行に1回まとめて行うが、そうではなく逐次fitしたいときはTrueを入れる
+        """
+        self.n = n
+        self.column = column
+        self.logger = logger
+        self.split_num = split_num
+        self.data_dict = {}
+        self.is_partial_fit = is_partial_fit
+        self.make_col_name = f"first_{n}_ans"
+
+    def fit(self,
+            group,
+            feature_factory_dict: Dict[Union[str, tuple],
+                                       Dict[str, object]]):
+
+        for key, w_df in group:
+            ans = "".join(w_df["answered_correctly"].fillna(9).astype(int).astype(str).values[:5].tolist())
+
+            if key not in self.data_dict:
+                self.data_dict[key] = ans
+            elif len(self.data_dict[key]) < 5:
+                self.data_dict[key] = self.data_dict[key] + ans
+                self.data_dict[key] = self.data_dict[key][:5]
+
+        return self
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        def f(x):
+            rets = [""]
+            ret = ""
+            for s in x.values[:5]:
+                if np.isnan(s):
+                    ret += "9"
+                else:
+                    ret += str(int(s))
+                rets.append(ret)
+            if len(x) > 5:
+                rets.extend([ret] * (len(x) - 6))
+            else:
+                rets = rets[:len(x)]
+            return rets
+        df[self.make_col_name] = df.groupby("user_id")["answered_correctly"].progress_transform(f)
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        df[self.make_col_name] = [self.data_dict[x] if x in self.data_dict else ""
+                                  for x in df[self.column].values]
+        return df
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(key={self.column})"
+
+
 class FeatureFactoryManager:
     def __init__(self,
                  feature_factory_dict: Dict[Union[str, tuple],
