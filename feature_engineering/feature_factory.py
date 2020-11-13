@@ -566,28 +566,27 @@ class MeanAggregator(FeatureFactory):
             feature_factory_dict: Dict[Union[str, tuple],
                                        Dict[str, FeatureFactory]]):
         sum_dict = group[self.agg_column].sum().to_dict()
-        size_dict = group[self.agg_column].size().to_dict()
+        size_dict = group["is_question"].sum().to_dict()
         for key in sum_dict.keys():
             sum_ = sum_dict[key]
             size_ = size_dict[key]
             if key not in self.data_dict:
-                self.data_dict[key] = sum_ / size_
+                self.data_dict[key] = {}
+                self.data_dict[key][self.make_col_name] = sum_ / size_
+                self.data_dict[key]["size"] = size_
             else:
                 # count_encoderの値は更新済のため、
                 # count = 4, len(df) = 1の場合、もともと3件あって1件が足されたとかんがえる
-                count = feature_factory_dict[self.column]["CountEncoder"].data_dict[key]
+                count = self.data_dict[key]["size"].data_dict[key]
                 target_enc = self.data_dict[key]
-                self.data_dict[key] = \
-                    ((count - size_) * target_enc + sum_) / count
+                self.data_dict[key][self.make_col_name] = ((count - size_) * target_enc + sum_) / count
+                self.data_dict[key]["size"] = size_
         return self
 
     def all_predict(self,
                     df: pd.DataFrame):
         def f(series):
-            if self.remove_now:
-                return series.shift(1).cumsum() / np.arange(len(series))
-            else:
-                return series.cumsum() / (np.arange(len(series)) + 1)
+            return (series.shift(1).fillna(0).cumsum()) / series.shift(1).notnull().cumsum()
 
         self.logger.info(f"{self.feature_name_base}_all_{self.column}_{self.agg_column}")
         df[self.make_col_name] = df.groupby(self.column)[self.agg_column].transform(f).astype("float32")
@@ -596,7 +595,7 @@ class MeanAggregator(FeatureFactory):
 
     def partial_predict(self,
                         df: pd.DataFrame):
-        df = self._partial_predict(df)
+        df = self._partial_predict2(df, column=self.make_col_name)
         df[self.make_col_name] = df[self.make_col_name].astype("float32")
         df[f"diff_{self.make_col_name}"] = (df[self.agg_column] - df[self.make_col_name]).astype("float32")
         return df
@@ -1096,7 +1095,7 @@ class QuestionLectureTableEncoder(FeatureFactory):
 
     def make_dict(self,
                   df: pd.DataFrame,
-                  threshold: int = 300,
+                  threshold: int = 50,
                   test_mode: bool = False,
                   output_dir: str = None):
         """
@@ -1568,6 +1567,7 @@ class FeatureFactoryManager:
                         df = factory.partial_predict(df)
                     else:
                         df = factory.all_predict(df)
+                    self.logger.info(factory)
                     df = factory.make_feature(df)
                     factory.fit(group=group,
                                 feature_factory_dict=self.feature_factory_dict)
@@ -1586,6 +1586,7 @@ class FeatureFactoryManager:
 
             for factory in dicts.values():
                 if not factory.is_partial_fit:
+                    self.logger.info(factory)
                     factory.fit(group=group,
                                 feature_factory_dict=self.feature_factory_dict)
         df = df.drop("is_question", axis=1)
@@ -1627,12 +1628,14 @@ class FeatureFactoryManager:
         for dicts in self.feature_factory_dict.values():
             for factory in dicts.values():
                 if factory.is_partial_fit:
+                    self.logger.info(factory)
                     df = factory.partial_predict(df)
 
         # partial_predictなし
         for dicts in self.feature_factory_dict.values():
             for factory in dicts.values():
                 if not factory.is_partial_fit:
+                    self.logger.info(factory)
                     df = factory.partial_predict(df)
 
         return df

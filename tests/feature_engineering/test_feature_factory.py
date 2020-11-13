@@ -16,7 +16,9 @@ from feature_engineering.feature_factory import \
     PreviousAnswer2, \
     QuestionLectureTableEncoder, \
     PreviousLecture, \
-    ContentLevelEncoder
+    ContentLevelEncoder, \
+    FirstColumnEncoder, \
+    FirstNAnsweredCorrectly
 from experiment.common import get_logger
 import pickle
 import os
@@ -97,7 +99,6 @@ class PartialAggregatorTestCase(unittest.TestCase):
         logger = get_logger()
         feature_factory_dict = {
             "key1": {
-                "CountEncoder": CountEncoder(column="key1"),
                 "MeanAggregator": MeanAggregator(column="key1", agg_column="data1", remove_now=True)}
         }
         agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
@@ -114,12 +115,6 @@ class PartialAggregatorTestCase(unittest.TestCase):
         # fit
         agger.fit(df)
 
-        expect = {"a": 0,
-                  "b": 1,
-                  "c": 1/2}
-
-        self.assertEqual(expect, agger.feature_factory_dict["key1"]["MeanAggregator"].data_dict)
-
         # partial predict
         df_test = pd.DataFrame({"key1": ["a", "b", "b", "c", "d"],
                                 "data1": [1, 1, 1, 1, 1],
@@ -131,19 +126,6 @@ class PartialAggregatorTestCase(unittest.TestCase):
         df_expect["diff_mean_data1_by_key1"] = df_expect["diff_mean_data1_by_key1"].astype("float32")
         df_actual = agger.partial_predict(df_test)
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
-
-        # partial fit
-        df_partial = pd.DataFrame({"key1": ["a", "b", "b", "d", "d"],
-                                   "data1": [0, 0, 1, 1, 0],
-                                   "answered_correctly": [0, 0, 0, 0, 0]})
-
-        agger.fit(df_partial)
-        expect = {"a": 0,
-                  "b": 3/4,
-                  "c": 1/2,
-                  "d": 1/2}
-
-        self.assertEqual(expect, agger.feature_factory_dict["key1"]["MeanAggregator"].data_dict)
 
     def test_fit_countencoding_split2(self):
         """
