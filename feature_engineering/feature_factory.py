@@ -205,7 +205,7 @@ class TargetEncoder(FeatureFactory):
             return series.notnull().sum()
         initial_bunshi = self.initial_score * self.initial_weight
         sum_dict = group["answered_correctly"].sum().to_dict()
-        size_dict = group["answered_correctly"].apply(f).astype("int32").to_dict()
+        size_dict = group["is_question"].sum().to_dict()
 
         for key in sum_dict.keys():
             w_sum = sum_dict[key]
@@ -969,8 +969,8 @@ class PreviousAnswer2(FeatureFactory):
                 self.data_dict[user_id]["content_id"] = content_id
                 self.data_dict[user_id]["answered_correctly"] = answer
             else:
-                self.data_dict[user_id]["content_id"] = content_id + self.data_dict[user_id]["content_id"][len(content_id):][:3000]
-                self.data_dict[user_id]["answered_correctly"] = answer + self.data_dict[user_id]["answered_correctly"][len(content_id):][:3000]
+                self.data_dict[user_id]["content_id"] = content_id + self.data_dict[user_id]["content_id"][len(content_id):][:1000]
+                self.data_dict[user_id]["answered_correctly"] = answer + self.data_dict[user_id]["answered_correctly"][len(content_id):][:1000]
         return self
 
     def all_predict(self,
@@ -1423,6 +1423,7 @@ class FeatureFactoryManager:
         :return:
         """
         # partial_fit
+        df["is_question"] = df["answered_correctly"].notnull().astype("int8")
         for column, dicts in self.feature_factory_dict.items():
             # カラム(ex: user_idなど)ごとに処理
             if column == "postprocess":
@@ -1460,6 +1461,7 @@ class FeatureFactoryManager:
                 if not factory.is_partial_fit:
                     factory.fit(group=group,
                                 feature_factory_dict=self.feature_factory_dict)
+        df = df.drop("is_question", axis=1)
 
     def fit_predict(self,
                     df: pd.DataFrame):

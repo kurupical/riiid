@@ -92,7 +92,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
         :return:
         """
         df = pd.DataFrame({"key1": ["a", "b", "b", "c", "c", "c", "c"],
-                           "data1": [0, 1, 1, 0, 1, 1, 0]})
+                           "data1": [0, 1, 1, 0, 1, 1, 0],
+                           "answered_correctly": [0, 0, 0, 0, 0, 0, 0]})
         logger = get_logger()
         feature_factory_dict = {
             "key1": {
@@ -121,7 +122,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         # partial predict
         df_test = pd.DataFrame({"key1": ["a", "b", "b", "c", "d"],
-                                "data1": [1, 1, 1, 1, 1]})
+                                "data1": [1, 1, 1, 1, 1],
+                                "answered_correctly": [0, 0, 0, 0, 0]})
         df_expect = pd.DataFrame({"key1": ["a", "b", "b", "c", "d"],
                                   "mean_data1_by_key1": [0, 1, 1, 1/2, np.nan],
                                   "diff_mean_data1_by_key1": [1, 0, 0, 1/2, np.nan]})
@@ -132,7 +134,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         # partial fit
         df_partial = pd.DataFrame({"key1": ["a", "b", "b", "d", "d"],
-                                   "data1": [0, 0, 1, 1, 0]})
+                                   "data1": [0, 0, 1, 1, 0],
+                                   "answered_correctly": [0, 0, 0, 0, 0]})
 
         agger.fit(df_partial)
         expect = {"a": 0,
@@ -340,7 +343,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
         :return:
         """
         df = pd.DataFrame({"key1": ["a", "a", "b", "b"],
-                           "val": ["x", "x", "x", "y"]})
+                           "val": ["x", "x", "x", "y"],
+                           "answered_correctly": [0, 0, 0, 0]})
         logger = get_logger()
         feature_factory_dict = {
             "key1": {
@@ -375,7 +379,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         # partial fit
         df_partial = pd.DataFrame({"key1": ["a", "a", "b", "c"],
-                                   "val": ["x", "y", "x", "y"]})
+                                   "val": ["x", "y", "x", "y"],
+                                   "answered_correctly": [0, 0, 0, 0]})
         agger.fit(df_partial)
 
         df = pd.DataFrame({"key1": ["a", "b", "c", "d"],
@@ -395,7 +400,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
         :return:
         """
         df = pd.DataFrame({"key1": ["a", "a", "b", "b"],
-                           "val": [1, 2, 4, 8]})
+                           "val": [1, 2, 4, 8],
+                           "answered_correctly": [0, 0, 0, 0]})
         logger = get_logger()
         feature_factory_dict = {
             "key1": {
@@ -453,7 +459,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
                                       logger=logger)
 
         df = pd.DataFrame({"user_id": ["x", "x", "x", "y", "y", "y"],
-                           "col1": [1, 2, 2, 3, 1, 3]})
+                           "col1": [1, 2, 2, 3, 1, 3],
+                           "answered_correctly": [0, 0, 0, 0, 0, 0]})
 
 
         # predict_all
@@ -716,7 +723,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         df = pd.DataFrame({"user_id": [1] * 9 + [2] * 9,
                            "content_id": ["q0", "q1", "a0", "a2", "q0", "q1", "a1", "q0", "q1"] * 2,
-                           "content_type_id": [0, 0, 1, 0, 0, 0, 1, 0, 0] * 2})
+                           "content_type_id": [0, 0, 1, 0, 0, 0, 1, 0, 0] * 2,
+                           "answered_correctly": [0] * 18})
 
         df_expect = pd.DataFrame({"question_lecture_score": [0, 0, 0, 0, 0.1, 0.2, 0, 0.1+0.4, 0.2+0.8] * 2})
         df_expect = df_expect.astype("float32")
@@ -781,7 +789,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         df = pd.DataFrame({"user_id": [1, 1, 1, 2, 2, 2],
                            "content_id": [0, 1, 2, 3, 4, 5],
-                           "content_type_id": [0, 1, 1, 0, 1, 0]})
+                           "content_type_id": [0, 1, 1, 0, 1, 0],
+                           "answered_correctly": [0, 0, 0, 0, 0, 0]})
 
         df_expect = pd.DataFrame({"previous_lecture": [np.nan, np.nan, 1, np.nan, np.nan, 4]})
         df_expect = df_expect.fillna(-1).astype("int8")
