@@ -1382,6 +1382,63 @@ class ContentLevelEncoder(FeatureFactory):
         return df
 
 
+class FirstColumnEncoder(FeatureFactory):
+    feature_name_base = "first_column"
+    def __init__(self,
+                 column: Union[list, str],
+                 astype: str,
+                 split_num: int = 1,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        """
+
+        :param column:
+        :param split_num:
+        :param logger:
+        :param is_partial_fit:
+        :param is_all_fit:
+            fit時のflag. fitは処理時間削減のため通常150行に1回まとめて行うが、そうではなく逐次fitしたいときはTrueを入れる
+        """
+        self.column = column
+        self.astype = astype
+        self.logger = logger
+        self.split_num = split_num
+        self.data_dict = {}
+        self.is_partial_fit = is_partial_fit
+        self.make_col_name = f"{self.feature_name_base}_{self.column}"# .replace(" ", "").replace("'", "")
+
+    def fit(self,
+            group,
+            feature_factory_dict: Dict[Union[str, tuple],
+                                       Dict[str, object]]):
+        w_dict = group[self.column].first().to_dict()
+
+        for key, value in w_dict.items():
+            if key not in self.data_dict:
+                self.data_dict[key] = value
+        return self
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        df[self.make_col_name] = df.groupby("user_id")[self.column].transform("first").astype(self.astype)
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        def f(user_id, value):
+            if user_id in self.data_dict:
+                return self.data_dict[user_id]
+            else:
+                self.data_dict[user_id] = value
+                return value
+
+        df[self.make_col_name] = [f(x[0], x[1]) for x in df[["user_id", self.column]].values]
+        df[self.make_col_name] = df[self.make_col_name].astype(self.astype)
+        return df
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(key={self.column})"
+
 
 class FeatureFactoryManager:
     def __init__(self,

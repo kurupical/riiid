@@ -894,6 +894,50 @@ class PartialAggregatorTestCase(unittest.TestCase):
         df_actual = agger.partial_predict(df_test)
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
+    def test_first_column(self):
+        logger = get_logger()
+
+        feature_factory_dict = {
+            "user_id": {
+                "FirstColumn": FirstColumnEncoder(column="key1",
+                                                  astype="int8")
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        df = pd.DataFrame({"user_id": [1, 1, 1, 2, 2, 2],
+                           "key1": [0, 1, 2, 3, 4, 5],
+                           "answered_correctly": [0, 0, 0, 0, 0, 0]})
+
+        df_expect = pd.DataFrame({"first_column_key1": [0, 0, 0, 3, 3, 3]})
+        df_expect = df_expect.fillna(-1).astype("int8")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        df = pd.DataFrame({"user_id": [1, 2, 3, 3],
+                           "key1": [6, 7, 8, 9],
+                           "answered_correctly": [0, 0, 0, 0]})
+
+        df_expect = pd.DataFrame({"first_column_key1": [0, 3, 8, 8]})
+        df_expect = df_expect.fillna(-1).astype("int8")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        df = pd.DataFrame({"user_id": [3],
+                           "key1": [10],
+                           "answered_correctly": [0]})
+
+        df_expect = pd.DataFrame({"first_column_key1": [8]})
+        df_expect = df_expect.fillna(-1).astype("int8")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
 if __name__ == "__main__":
     unittest.main()
