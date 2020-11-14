@@ -1611,6 +1611,104 @@ class FirstNAnsweredCorrectly(FeatureFactory):
         return f"{self.__class__.__name__}(key={self.column})"
 
 
+
+class PreviousNAnsweredCorrectly(FeatureFactory):
+    """
+    過去N回のanswered_correctlyを文字列として結合する
+    ただし:
+    bundle_idが同じものは,最後のbundle_idが終わるまで答えがわからないので、8
+    partial_predictで答え未知の場合は、8
+    lecture(content_type_id=1)の場合は、9
+    をそれぞれ設定する。
+    """
+    def __init__(self,
+                 n: int,
+                 column: str = "user_id",
+                 split_num: int = 1,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.n = n
+        self.column = column
+        self.logger = logger
+        self.split_num = split_num
+        self.data_dict = {}
+        self.is_partial_fit = is_partial_fit
+        self.make_col_name = f"previous_{n}_ans"
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[Union[str, tuple],
+                                       Dict[str, object]]):
+        group = df.groupby(self.column)
+        for key, w_df in group:
+            ans = "".join(w_df["answered_correctly"].fillna(9).astype(int).astype(str).values[::-1].tolist())
+            ans = ans[:self.n]
+            if key not in self.data_dict:
+                self.data_dict[key] = ans
+            else:
+                self.data_dict[key] = ans + self.data_dict[key][len(ans):]
+                self.data_dict[key] = self.data_dict[key][:self.n]
+
+        return self
+
+    def all_predict(self,
+                    df: pd.DataFrame):
+        def f(is_bundled, answered_correctly):
+            if is_bundled:
+                return answered_correctly - 5 # bundleされているめじるし
+            else:
+                return answered_correctly
+
+        def g(x):
+            rets = [""]
+            ret = [] # データに記録される数値
+            w_ret = [] # 正しい数値
+            for s in x.values:
+                if np.isnan(s):
+                    ret = [9] + ret
+                    w_ret = [9] + w_ret
+                elif s <= -4:
+                    ret = [8] + ret
+                    w_ret = [s+5] + w_ret
+                else:
+                    ret = [s] + ret
+                    w_ret = [s] + w_ret
+                if s >= 0:
+                    ret = w_ret
+                ret = ret[:self.n]
+                rets.append("".join([str(int(x)) for x in ret]))
+            return rets[:-1]
+        df["is_bundled"] = \
+            (df.groupby("user_id")["bundle_id"].shift(-1) == df["bundle_id"]).astype("int8")
+        df["is_bundled"] = (df["is_bundled"] > 0)
+        df["answered_correctly_bundle"] = [f(x[0], x[1]) for x in df[["is_bundled", "answered_correctly"]].values]
+        df[self.make_col_name] = df.groupby("user_id")["answered_correctly_bundle"].progress_transform(g)
+
+        df = df.drop(["is_bundled", "answered_correctly_bundle"], axis=1)
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        def f(user_id, content_type_id):
+            if user_id not in self.data_dict:
+                self.data_dict[user_id] = ""
+                ret = ""
+            else:
+                ret = self.data_dict[user_id]
+
+            if content_type_id == 1:
+                self.data_dict[user_id] = ("9" + self.data_dict[user_id])[:self.n]
+            else:
+                self.data_dict[user_id] = ("8" + self.data_dict[user_id])[:self.n]
+            return ret
+
+        df[self.make_col_name] = [f(x[0], x[1]) for x in df[["user_id", "content_type_id"]].values]
+        return df
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(key={self.column})"
+
+
 class FeatureFactoryManager:
     def __init__(self,
                  feature_factory_dict: Dict[Union[str, tuple],

@@ -950,6 +950,104 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
+    def test_previous_n_answered_correctly(self):
+        logger = get_logger()
+
+        feature_factory_dict = {
+            "user_id": {
+                "Previous2AnsweredCorrectly": PreviousNAnsweredCorrectly(n=3)
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        df = pd.DataFrame({"user_id": [1, 1, 1, 1, 2, 2, 4, 4, 4, 4],
+                           "bundle_id": [1, np.nan, 3, 4, 5, 6, 7, 7, 7, 8],
+                           "content_type_id": [0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+                           "answered_correctly": [0, np.nan, 1, 0, 0, 1, 0, 1, 1, 0]})
+
+        df_expect = pd.DataFrame({"previous_3_ans": ["", "0", "90", "190", "", "0", "", "8", "88", "110"]})
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        agger.fit(df)
+
+        # partial_predict1
+        df1 = pd.DataFrame({"user_id": [1, 2, 3],
+                            "bundle_id": [8, 9, np.nan],
+                            "content_type_id": [0, 0, 1],
+                            "answered_correctly": [0, 0, np.nan]})
+
+        df_expect = pd.DataFrame({"previous_3_ans": ["019", "10", ""]})
+        df_actual = agger.partial_predict(df1)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # partial_predict時点でわからない情報は8にする
+        df2 = pd.DataFrame({"user_id": [1, 2, 3, 3],
+                            "bundle_id": [11, 12, 13, 13],
+                            "content_type_id": [0, 0, 0, 0],
+                            "answered_correctly": [0, 0, 1, 1]})
+
+        df_expect = pd.DataFrame({"previous_3_ans": ["801", "810", "9", "89"]})
+        df_actual = agger.partial_predict(df2)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # df1, df2をfitしたら、partial_predict時点で分からなかったところを塗り替える
+        agger.fit(pd.concat([df1, df2]))
+
+        df3 = pd.DataFrame({"user_id": [1, 2, 3],
+                            "bundle_id": [8, 9, np.nan],
+                            "content_type_id": [0, 0, 1],
+                            "answered_correctly": [0, 0, np.nan]})
+
+        df_expect = pd.DataFrame({"previous_3_ans": ["000", "001", "119"]})
+        df_actual = agger.partial_predict(df3)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+    def test_session(self):
+        """
+        user1: session0 finished & session1
+        user2: session0 途中 -> partial_predictでsession0 end & session1 start
+        user3: sessionなし -> partial_predictで
+        :return:
+        """
+        logger = get_logger()
+
+        feature_factory_dict = {
+            "user_id": {
+                "SessionEncoder": SessionEncoder()
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        df = pd.DataFrame({"user_id": [1, 1, 1, 2, 2],
+                           "timestamp": [0, 10, 10**7, 0, 10],
+                           "answered_correctly": [0, 0, 0, 0, 0]})
+
+        df_expect = pd.DataFrame({"session": [0, 0, 1, 0, 0],
+                                  "session_nth": [0, 1, 0, 0, 1],
+                                  "first_session_nth": [0, 1, np.nan, 0, 1]}).fillna(-1).astype("int16")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        df = pd.DataFrame({"user_id": [1, 1, 2, 2, 3, 3, 3],
+                           "timestamp": [10**8, 10**8+10, 20, 10**7, 0, 10, 10**7]})
+
+        df_expect = pd.DataFrame({"session": [2, 2, 0, 1, 0, 0, 1],
+                                  "session_nth": [0, 1, 2, 0, 0, 1, 0],
+                                  "first_session_nth": [np.nan, np.nan, 2, np.nan, 0, 1, np.nan]})
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
 if __name__ == "__main__":
     unittest.main()
