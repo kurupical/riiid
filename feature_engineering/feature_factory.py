@@ -1037,8 +1037,8 @@ class PreviousAnswer2(FeatureFactory):
             for col in w_df.columns:
                 df[col] = w_df[col].values
         else:
-            prev_answer_index = df.groupby("user_id")["content_id"].progress_transform(f).fillna(-99).astype("int16")
-            prev_answer = df.groupby([self.groupby, "content_id"])["answered_correctly"].shift(1).fillna(-99).astype("int8")
+            prev_answer_index = df.groupby("user_id")["content_id"].progress_transform(f).fillna(-99).values
+            prev_answer = df.groupby([self.groupby, "content_id"])["answered_correctly"].shift(1).fillna(-99).values
             df[f"previous_answer_index_{self.column}"] = [x if x < self.n else None for x in prev_answer_index]
             df[f"previous_answer_{self.column}"] = [prev_answer[i] if x < self.n else None for i, x in enumerate(prev_answer_index)]
             df[f"previous_answer_index_{self.column}"] = df[f"previous_answer_index_{self.column}"].fillna(-99).astype("int16")

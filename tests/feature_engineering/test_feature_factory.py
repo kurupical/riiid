@@ -11,14 +11,15 @@ from feature_engineering.feature_factory import \
     NUniqueEncoder, \
     ShiftDiffEncoder, \
     Counter, \
-    PreviousAnswer, \
     CategoryLevelEncoder, \
     PreviousAnswer2, \
     QuestionLectureTableEncoder, \
     PreviousLecture, \
     ContentLevelEncoder, \
     FirstColumnEncoder, \
-    FirstNAnsweredCorrectly
+    FirstNAnsweredCorrectly, \
+    SessionEncoder, \
+    PreviousNAnsweredCorrectly
 from experiment.common import get_logger
 import pickle
 import os
@@ -113,7 +114,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
         # fit
-        agger.fit(df)
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
 
         # partial predict
         df_test = pd.DataFrame({"key1": ["a", "b", "b", "c", "d"],
@@ -590,6 +592,63 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
+    def test_fit_previous_answered_index_limited(self):
+        logger = get_logger()
+        feature_factory_dict = {
+            "user_id": {
+                "PreviousAnswer": PreviousAnswer2(groupby="user_id",
+                                                  column="content_id",
+                                                  n=2,
+                                                  repredict=True,
+                                                  is_debug=True)
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        # all_predict
+        df = pd.DataFrame({"user_id": [1, 1, 1, 1, 1, 1],
+                           "content_id": [1, 2, 2, 1, 2, 1],
+                           "answered_correctly": [1, 0, 1, 0, 1, 1]})
+        df_expect = pd.DataFrame({"previous_answer_content_id": [np.nan, np.nan, 0, np.nan, 1, 0],
+                                  "previous_answer_index_content_id": [np.nan, np.nan, 0, np.nan, 1, 1]})
+        df_expect["previous_answer_content_id"] = df_expect["previous_answer_content_id"].fillna(-99).astype("int8")
+        df_expect["previous_answer_index_content_id"] = df_expect["previous_answer_index_content_id"].fillna(-99).astype("int16")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        agger.partial_predict(df)
+        agger.fit(df)
+
+        df_test = pd.DataFrame({"user_id": [1, 1, 2, 2, 2, 1],
+                                "content_id": [1, 2, 1, 3, 2, 1]})
+
+        df_expect = pd.DataFrame({"previous_answer_content_id": [1, np.nan, np.nan, np.nan, np.nan, np.nan],
+                                  "previous_answer_index_content_id": [0, np.nan, np.nan, np.nan, np.nan, 1]})
+        df_expect["previous_answer_content_id"] = df_expect["previous_answer_content_id"].fillna(-99).astype("int8")
+        df_expect["previous_answer_index_content_id"] = df_expect["previous_answer_index_content_id"].fillna(-99).astype("int16")
+        df_actual = agger.partial_predict(df_test)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        df_test = pd.DataFrame({"user_id": [1, 1, 2, 2, 2, 1],
+                                "content_id": [1, 2, 1, 3, 2, 1],
+                                "answered_correctly": [1, 1, 1, 0, 0, 0]})
+        agger.partial_predict(df_test)
+        agger.fit(df_test)
+
+        df_test = pd.DataFrame({"user_id": [1, 1, 2],
+                                "content_id": [1, 2, 3]})
+
+        df_expect = pd.DataFrame({"previous_answer_content_id": [0, np.nan, 0],
+                                  "previous_answer_index_content_id": [0, np.nan, 1]})
+        df_expect["previous_answer_content_id"] = df_expect["previous_answer_content_id"].fillna(-99).astype("int8")
+        df_expect["previous_answer_index_content_id"] = df_expect["previous_answer_index_content_id"].fillna(-99).astype("int16")
+        df_actual = agger.partial_predict(df_test)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
     def test_fit_previous_answered_index(self):
         logger = get_logger()
         feature_factory_dict = {
@@ -841,7 +900,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         feature_factory_dict = {
             "user_id": {
-                "FirstColumn": FirstColumnEncoder(column="key1",
+                "FirstColumn": FirstColumnEncoder(agg_column="key1",
                                                   astype="int8")
             }
         }
