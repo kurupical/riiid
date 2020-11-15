@@ -848,10 +848,10 @@ class UserLevelEncoder2(FeatureFactory):
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
         initial_bunshi = self.initial_score * self.initial_weight
-
+        df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]
         for key, w_df in df.groupby(self.column):
-            rate = (w_df["answered_correctly"] - w_df[f"target_enc_{self.vs_column}"])
-            rate = rate[rate.notnull()]
+            rate = w_df["rate"].values
+            rate = rate[rate == rate]
             if len(rate) == 0:
                 continue
             if key not in self.data_dict:
@@ -874,6 +874,8 @@ class UserLevelEncoder2(FeatureFactory):
                 self.data_dict[key][f"user_rate_sum_{self.vs_column}"] = user_rate_sum + rate_sum
                 self.data_dict[key][f"user_rate_mean_{self.vs_column}"] = (user_rate_sum + rate_sum) / count
                 self.data_dict[key]["count"] = self.data_dict[key]["count"] + len(rate)
+        df = df.drop("rate", axis=1)
+
         return self
 
     def _all_predict_core(self,
@@ -946,29 +948,33 @@ class CategoryLevelEncoder(FeatureFactory):
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
-        group = df.groupby(self.groupby_column)
-        for key, ww_df in group:
-            for category, w_df in ww_df.groupby(self.agg_column):
-                rate = w_df["answered_correctly"] - w_df[f"target_enc_{self.vs_columns}"]
-                size = rate.notnull().sum()
-                if key not in self.data_dict:
-                    self.data_dict[key] = {}
-                    self.data_dict[key][f"count_{self.agg_column}_{category}"] = size
-                    self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"] = rate.sum()
-                    self.data_dict[key][f"user_rate_mean_{self.agg_column}_{category}"] = rate.mean()
-                elif f"user_rate_sum_{self.agg_column}_{category}" not in self.data_dict[key]:
-                    self.data_dict[key][f"count_{self.agg_column}_{category}"] = size
-                    self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"] = rate.sum()
-                    self.data_dict[key][f"user_rate_mean_{self.agg_column}_{category}"] = rate.mean()
-                else:
-                    self.data_dict[key][f"count_{self.agg_column}_{category}"] += size
-                    user_rate_sum = self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"]
+        df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_columns}"]
+        group = df[df[self.agg_column].isin(self.categories)].groupby([self.groupby_column, self.agg_column])
+        for keys, w_df in group[["answered_correctly", f"target_enc_{self.vs_columns}"]]:
+            key = keys[0]
+            category = keys[1]
+            rate = w_df["rate"].values
+            rate = rate[rate==rate]
+            sum_ = rate.sum()
+            size = len(rate)
+            if key not in self.data_dict:
+                self.data_dict[key] = {}
+                self.data_dict[key][f"count_{self.agg_column}_{category}"] = size
+                self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"] = sum_
+                self.data_dict[key][f"user_rate_mean_{self.agg_column}_{category}"] = sum_ / size
+            elif f"user_rate_sum_{self.agg_column}_{category}" not in self.data_dict[key]:
+                self.data_dict[key][f"count_{self.agg_column}_{category}"] = size
+                self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"] = sum_
+                self.data_dict[key][f"user_rate_mean_{self.agg_column}_{category}"] = sum_ / size
+            else:
+                self.data_dict[key][f"count_{self.agg_column}_{category}"] += size
+                user_rate_sum = self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"]
 
-                    count = self.data_dict[key][f"count_{self.agg_column}_{category}"]
-                    rate_sum = rate.sum()
+                count = self.data_dict[key][f"count_{self.agg_column}_{category}"]
 
-                    self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"] = user_rate_sum + rate_sum
-                    self.data_dict[key][f"user_rate_mean_{self.agg_column}_{category}"] = (user_rate_sum + rate_sum) / count
+                self.data_dict[key][f"user_rate_sum_{self.agg_column}_{category}"] = user_rate_sum + sum_
+                self.data_dict[key][f"user_rate_mean_{self.agg_column}_{category}"] = (user_rate_sum + sum_) / count
+        df = df.drop("rate", axis=1)
         return self
 
     def _all_predict_core(self,
@@ -1645,10 +1651,11 @@ class ContentLevelEncoder(FeatureFactory):
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
         initial_bunshi = self.initial_score * self.initial_weight
+        df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]
         group = df.groupby(self.column)
         for key, w_df in group:
-            rate = (w_df["answered_correctly"] - w_df[f"target_enc_{self.vs_column}"])
-            rate = rate[rate.notnull()]
+            rate = w_df["rate"].values
+            rate = rate[rate==rate]
             if len(rate) == 0:
                 continue
             if key not in self.data_dict:
@@ -1671,6 +1678,7 @@ class ContentLevelEncoder(FeatureFactory):
                 self.data_dict[key][f"content_rate_sum_{self.vs_column}"] = content_rate_sum + rate_sum
                 self.data_dict[key][f"content_rate_mean_{self.vs_column}"] = (content_rate_sum + rate_sum) / count
                 self.data_dict[key]["count"] = self.data_dict[key]["count"] + len(rate)
+        df = df.drop("rate", axis=1)
         return self
 
     def _all_predict_core(self,
@@ -1994,9 +2002,9 @@ class FeatureFactoryManager:
                 factory.logger = logger
                 factory.split_num = split_num
                 factory.model_id = model_id
-                if self.load_feature is not None and factory.load_feature is not None:
+                if self.load_feature is not None and factory.load_feature is None:
                     factory.load_feature = load_feature
-                if self.save_feature is not None and factory.save_feature is not None:
+                if self.save_feature is not None and factory.save_feature is None:
                     factory.save_feature = save_feature
 
 
@@ -2030,14 +2038,6 @@ class FeatureFactoryManager:
         # not partial_fit
         for column, dicts in self.feature_factory_dict.items():
             # カラム(ex: user_idなど)ごとに処理
-            if column == "postprocess":
-                continue
-            if type(column) == tuple:
-                group = df.groupby(list(column))
-            elif type(column) == str:
-                group = df.groupby(column)
-            else:
-                raise ValueError
 
             for factory in dicts.values():
                 if not factory.is_partial_fit:
