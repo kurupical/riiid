@@ -559,7 +559,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
         logger = get_logger()
         feature_factory_dict = {
             "user_id": {
-                "PreviousAnswer": PreviousAnswer2(groupby="user_id", column="content_id", repredict=True, is_debug=True)
+                "PreviousAnswer": PreviousAnswer2(groupby="user_id", column="content_id", is_debug=True)
             }
         }
         agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
@@ -599,7 +599,6 @@ class PartialAggregatorTestCase(unittest.TestCase):
                 "PreviousAnswer": PreviousAnswer2(groupby="user_id",
                                                   column="content_id",
                                                   n=2,
-                                                  repredict=True,
                                                   is_debug=True)
             }
         }
@@ -653,7 +652,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
         logger = get_logger()
         feature_factory_dict = {
             "user_id": {
-                "PreviousAnswer": PreviousAnswer2(groupby="user_id", column="content_id", repredict=True, is_debug=True)
+                "PreviousAnswer": PreviousAnswer2(groupby="user_id", column="content_id", is_debug=True)
             }
         }
         agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,

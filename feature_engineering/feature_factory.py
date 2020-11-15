@@ -7,6 +7,7 @@ import time
 import pickle
 import os
 import glob
+import random
 
 tqdm.tqdm.pandas()
 
@@ -14,6 +15,9 @@ class FeatureFactory:
     feature_name_base = ""
     def __init__(self,
                  column: Union[list, str],
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
@@ -27,6 +31,9 @@ class FeatureFactory:
             fit時のflag. fitは処理時間削減のため通常150行に1回まとめて行うが、そうではなく逐次fitしたいときはTrueを入れる
         """
         self.column = column
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.split_num = split_num
         self.data_dict = {}
@@ -50,6 +57,46 @@ class FeatureFactory:
 
     def all_predict(self,
                     df: pd.DataFrame):
+
+        pickle_path = f"../input/feature_engineering/{self.make_col_name}/model_id_{self.model_id}.pickle"
+
+        if self.load_feature and os.path.isfile(pickle_path):
+            self.logger.info(f"load_feature from {pickle_path}")
+            df = self._load_feature(df=df,
+                                    pickle_path=pickle_path)
+        else:
+            original_cols = df.columns
+            df = self._all_predict_core(df)
+            update_columns = [x for x in df.columns if x not in original_cols]
+            if self.save_feature:
+                self._save_feature(df,
+                                   cols=update_columns,
+                                   pickle_path=pickle_path)
+        return df
+
+    def _load_feature(self,
+                      df: pd.DataFrame,
+                      pickle_path: str):
+        with open(pickle_path, "rb") as f:
+            w_df = pickle.load(f)
+        for col in w_df.columns:
+            df[col] = w_df[col].values
+        return df
+
+    def _save_feature(self,
+                      df: pd.DataFrame,
+                      cols: List[str],
+                      pickle_path: str):
+        print("save")
+        df_save = pd.DataFrame()
+        for col in cols:
+            df_save[col] = df[col]
+        os.makedirs(os.path.dirname(pickle_path), exist_ok=True)
+        with open(pickle_path, "wb") as f:
+            pickle.dump(df_save, f)
+
+    def _all_predict_core(self,
+                          df: pd.DataFrame):
         raise NotImplementedError
 
     def _partial_predict(self,
@@ -101,7 +148,7 @@ class CountEncoder(FeatureFactory):
             else:
                 self.data_dict[key] += value
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"count_encoding_all_{self.column}")
         df[self.make_col_name] = df.groupby(self.column).cumcount().astype("int32")
@@ -124,16 +171,23 @@ class Counter(FeatureFactory):
                  groupby_column: str,
                  agg_column: str,
                  categories: list,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
         self.groupby_column = groupby_column
         self.agg_column = agg_column
         self.categories = categories
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.split_num = split_num
         self.data_dict = {}
         self.is_partial_fit = is_partial_fit
+        self.make_col_name = f"groupby_{self.groupby_column}_{self.agg_column}_counter"
 
     def fit(self,
             df: pd.DataFrame,
@@ -148,7 +202,7 @@ class Counter(FeatureFactory):
             for col, ww_df in w_df.groupby(self.agg_column):
                 self.data_dict[key][col] += len(ww_df)
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"categories_count_{self.groupby_column}")
         for col in df[self.agg_column].drop_duplicates():
@@ -184,6 +238,9 @@ class TargetEncoder(FeatureFactory):
 
     def __init__(self,
                  column: Union[list, str],
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  initial_weight: int = 0,
                  initial_score: float = 0,
                  split_num: int = 1,
@@ -193,6 +250,9 @@ class TargetEncoder(FeatureFactory):
                          split_num=split_num,
                          logger=logger,
                          is_partial_fit=is_partial_fit)
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.initial_weight = initial_weight
         self.initial_score = initial_score
 
@@ -229,7 +289,7 @@ class TargetEncoder(FeatureFactory):
                 self.data_dict[key]["size"] = self.data_dict[key]["size"] + w_size
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         def f(series):
             bunshi = series.shift(1).notnull().cumsum() + self.initial_weight
@@ -253,10 +313,17 @@ class TagsSeparator(FeatureFactory):
     feature_name_base = ""
 
     def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
+        self.make_col_name = "tags_separator"
 
     def fit(self,
             df: pd.DataFrame,
@@ -281,7 +348,7 @@ class TagsSeparator(FeatureFactory):
                 df[col].astype("int16")
         return df
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"tags_all")
 
@@ -299,11 +366,17 @@ class TagsSeparator2(FeatureFactory):
     feature_name_base = ""
 
     def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
-
+        self.make_col_name = "tags_separator2"
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
@@ -326,7 +399,7 @@ class TagsSeparator2(FeatureFactory):
             df[f"tag_{t}"] = (tag == t).sum(axis=1).astype("uint8")
         return df
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"tags_all")
 
@@ -343,11 +416,18 @@ class PartSeparator(FeatureFactory):
     feature_name_base = ""
 
     def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
-
+        self.make_col_name = "part_separator"
+        
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
@@ -365,7 +445,7 @@ class PartSeparator(FeatureFactory):
             df[f"part{i}"] = (df["part"] == i).astype("int8")
         return df
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"part_all")
 
@@ -485,10 +565,17 @@ class UserCountBinningEncoder(FeatureFactory):
     feature_name_base = ""
 
     def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
+        self.make_col_name = "user_count_binning_encoder"
 
     def fit(self,
             df: pd.DataFrame,
@@ -507,7 +594,7 @@ class UserCountBinningEncoder(FeatureFactory):
                                       labels=False).astype("uint8")
         return df
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"usercount_bin_all")
 
@@ -526,10 +613,17 @@ class PriorQuestionElapsedTimeDiv10Encoder(FeatureFactory):
     feature_name_base = ""
 
     def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
+        self.make_col_name = self.__class__.__name__
 
     def fit(self,
             df: pd.DataFrame,
@@ -547,7 +641,7 @@ class PriorQuestionElapsedTimeDiv10Encoder(FeatureFactory):
         df["prior_question_elapsed_time_div10"] = df["prior_question_elapsed_time"] % 10
         return df
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"prior_question_all")
 
@@ -566,10 +660,17 @@ class PriorQuestionElapsedTimeBinningEncoder(FeatureFactory):
     feature_name_base = ""
 
     def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
+        self.make_col_name = self.__class__.__name__
 
     def fit(self,
             df: pd.DataFrame,
@@ -588,7 +689,7 @@ class PriorQuestionElapsedTimeBinningEncoder(FeatureFactory):
                                                         100000, 1000000], labels=False).fillna(255).astype("uint8")
         return df
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"tags_all")
 
@@ -607,10 +708,17 @@ class TargetEncodeVsUserId(FeatureFactory):
     feature_name_base = ""
 
     def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
+        self.make_col_name = self.__class__.__name__
 
     def fit(self,
             df: pd.DataFrame,
@@ -633,7 +741,7 @@ class TargetEncodeVsUserId(FeatureFactory):
             df[col_name] = df[col_name].astype("float32")
         return df
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"targetenc_vsuserid")
 
@@ -654,6 +762,9 @@ class MeanAggregator(FeatureFactory):
                  column: Union[str, list],
                  agg_column: str,
                  remove_now: bool,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  logger: Union[Logger, None] =None,
                  is_partial_fit: bool = False):
         super().__init__(column=column,
@@ -661,6 +772,9 @@ class MeanAggregator(FeatureFactory):
                          is_partial_fit=is_partial_fit)
         self.agg_column = agg_column
         self.remove_now = remove_now
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.make_col_name = f"{self.feature_name_base}_{self.agg_column}_by_{self.column}"
 
     def fit(self,
@@ -689,7 +803,7 @@ class MeanAggregator(FeatureFactory):
                 self.data_dict[key]["size"] = count
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         def f(series):
             return (series.shift(1).fillna(0).cumsum()) / series.shift(1).notnull().cumsum()
@@ -710,6 +824,9 @@ class MeanAggregator(FeatureFactory):
 class UserLevelEncoder2(FeatureFactory):
     def __init__(self,
                  vs_column: Union[str, list],
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  initial_score: float =.0,
                  initial_weight: float = 0,
                  logger: Union[Logger, None] = None,
@@ -718,9 +835,13 @@ class UserLevelEncoder2(FeatureFactory):
         self.vs_column = vs_column
         self.initial_score = initial_score
         self.initial_weight = initial_weight
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
         self.data_dict = {}
+        self.make_col_name = f"{self.__class__.__name__}_{vs_column}"
 
     def fit(self,
             df: pd.DataFrame,
@@ -755,7 +876,7 @@ class UserLevelEncoder2(FeatureFactory):
                 self.data_dict[key]["count"] = self.data_dict[key]["count"] + len(rate)
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
 
         def f_shift1_mean(series):
@@ -800,6 +921,9 @@ class CategoryLevelEncoder(FeatureFactory):
                  groupby_column: str,
                  agg_column: str,
                  categories: list,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False,
@@ -807,11 +931,15 @@ class CategoryLevelEncoder(FeatureFactory):
         self.groupby_column = groupby_column
         self.agg_column = agg_column
         self.categories = categories
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.split_num = split_num
         self.data_dict = {}
         self.is_partial_fit = is_partial_fit
         self.vs_columns = vs_columns
+        self.make_col_name = f"{self.__class__.__name__}_{groupby_column}_{agg_column}_{categories}"
 
 
     def fit(self,
@@ -843,7 +971,7 @@ class CategoryLevelEncoder(FeatureFactory):
                     self.data_dict[key][f"user_rate_mean_{self.agg_column}_{category}"] = (user_rate_sum + rate_sum) / count
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         def f_shift1_sum(series):
             return series.shift(1).cumsum()
@@ -894,11 +1022,17 @@ class NUniqueEncoder(FeatureFactory):
     def __init__(self,
                  groupby: str,
                  column: str,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
         self.groupby = groupby
         self.column = column
         self.logger = logger
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.is_partial_fit = is_partial_fit
         self.make_col_name = f"nunique_{self.column}_by_{self.groupby}"
         self.data_dict = {}
@@ -921,7 +1055,7 @@ class NUniqueEncoder(FeatureFactory):
                         self.data_dict[key].append(column)
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         ret = []
         # 1件ずつ確認し
@@ -954,11 +1088,18 @@ class SessionEncoder(FeatureFactory):
     feature_name_base = ""
 
     def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
         self.data_dict = {}
+        self.make_col_name = self.__class__.__name__
 
     def fit(self,
             df: pd.DataFrame,
@@ -987,7 +1128,7 @@ class SessionEncoder(FeatureFactory):
                 pass
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         def f(session, session_nth):
             if session > 0:
@@ -1051,7 +1192,7 @@ class PreviousAnswer(FeatureFactory):
             self.data_dict[self._make_key(key)] = value
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"previous_encoding_all_{self.column}")
         df[self.make_col_name] = df.groupby(self.column)["answered_correctly"].shift(1).fillna(-99).astype("int8")
@@ -1074,20 +1215,24 @@ class PreviousAnswer2(FeatureFactory):
                  groupby: str,
                  column: str,
                  n: int = 500,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  is_debug: bool = False,
-                 repredict: bool = False,
-                 model_id: int = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
         self.groupby = groupby
         self.column = column
         self.n = n
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.is_debug = is_debug
         self.logger = logger
-        self.repredict = repredict
         self.model_id = model_id
         self.is_partial_fit = is_partial_fit
         self.data_dict = {}
+        self.make_col_name = f"{self.__class__.__name__}_{groupby}_{column}_{n}"
 
     def fit(self,
             df: pd.DataFrame,
@@ -1107,7 +1252,7 @@ class PreviousAnswer2(FeatureFactory):
                 self.data_dict[user_id]["answered_correctly"] = answer + self.data_dict[user_id]["answered_correctly"][len(content_id):][:self.n]
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"previous_encoding_all_{self.column}")
         def f(series):
@@ -1131,28 +1276,12 @@ class PreviousAnswer2(FeatureFactory):
                     ret.append(w_ret[0])
             return ret
         self.logger.info(f"previous_encoding_all_{self.column}")
-        pickle_path = self.pickle_path.format(self.model_id)
-        if not self.repredict and os.path.isfile(pickle_path) and not self.is_debug:
-            self.logger.info(f"load_previous_encoding_pickle")
-            with open(pickle_path, "rb") as f:
-                w_df = pickle.load(f)
-            for col in w_df.columns:
-                df[col] = w_df[col].values
-        else:
-            prev_answer_index = df.groupby("user_id")["content_id"].progress_transform(f).fillna(-99).values
-            prev_answer = df.groupby([self.groupby, "content_id"])["answered_correctly"].shift(1).fillna(-99).values
-            df[f"previous_answer_index_{self.column}"] = [x if x < self.n else None for x in prev_answer_index]
-            df[f"previous_answer_{self.column}"] = [prev_answer[i] if x < self.n else None for i, x in enumerate(prev_answer_index)]
-            df[f"previous_answer_index_{self.column}"] = df[f"previous_answer_index_{self.column}"].fillna(-99).astype("int16")
-            df[f"previous_answer_{self.column}"] = df[f"previous_answer_{self.column}"].fillna(-99).astype("int8")
-
-            # save feature
-            if not self.is_debug:
-                w_df = pd.DataFrame()
-                with open(pickle_path, "wb") as f:
-                    w_df[f"previous_answer_{self.column}"] = prev_answer
-                    w_df[f"previous_answer_index_{self.column}"] = prev_answer_index
-                    pickle.dump(w_df, f)
+        prev_answer_index = df.groupby("user_id")["content_id"].progress_transform(f).fillna(-99).values
+        prev_answer = df.groupby([self.groupby, "content_id"])["answered_correctly"].shift(1).fillna(-99).values
+        df[f"previous_answer_index_{self.column}"] = [x if x < self.n else None for x in prev_answer_index]
+        df[f"previous_answer_{self.column}"] = [prev_answer[i] if x < self.n else None for i, x in enumerate(prev_answer_index)]
+        df[f"previous_answer_index_{self.column}"] = df[f"previous_answer_index_{self.column}"].fillna(-99).astype("int16")
+        df[f"previous_answer_{self.column}"] = df[f"previous_answer_{self.column}"].fillna(-99).astype("int8")
 
         return df
 
@@ -1207,11 +1336,17 @@ class ShiftDiffEncoder(FeatureFactory):
     def __init__(self,
                  groupby: str,
                  column: str,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
         self.groupby = groupby
         self.column = column
         self.logger = logger
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.is_partial_fit = is_partial_fit
         self.make_col_name = f"shiftdiff_{self.column}_by_{self.groupby}"
         self.data_dict = {}
@@ -1228,7 +1363,7 @@ class ShiftDiffEncoder(FeatureFactory):
                 self.data_dict[key] = value
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         df[self.make_col_name] = df[self.column] - df.groupby(self.groupby)[self.column].shift(1)
         df[self.make_col_name] = df[self.make_col_name].fillna(0).astype("int64")
@@ -1269,8 +1404,9 @@ class QuestionLectureTableEncoder(FeatureFactory):
     pickle_path = "../input/feature_engineering/ql_table_{}.pickle"
 
     def __init__(self,
-                 repredict: bool = False,
-                 model_id: int = None,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  question_lecture_dict: Union[Dict[tuple, float], None] = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False,
@@ -1286,11 +1422,13 @@ class QuestionLectureTableEncoder(FeatureFactory):
                 self.question_lecture_dict = pickle.load(f)
         else:
             self.question_lecture_dict = question_lecture_dict
-        self.repredict = repredict
+        self.load_feature = load_feature
+        self.save_feature = save_feature
         self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
         self.is_debug = is_debug
+        self.make_col_name = self.__class__.__name__
         self.data_dict = {}
 
     def make_dict(self,
@@ -1363,7 +1501,7 @@ class QuestionLectureTableEncoder(FeatureFactory):
                 self.data_dict[user_id].extend(w_df["content_id"].values.tolist())
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"question_lecture_table_encode")
         def f(series):
@@ -1393,22 +1531,8 @@ class QuestionLectureTableEncoder(FeatureFactory):
             return score
         pickle_path = self.pickle_path.format(self.model_id)
         self.logger.info(f"ql_score_encoding")
-        if not self.repredict and os.path.isfile(pickle_path) and not self.is_debug:
-            self.logger.info(f"load_ql_score_pickle")
-            with open(pickle_path, "rb") as f:
-                w_df = pickle.load(f)
-            for col in w_df.columns:
-                df[col] = w_df[col].values
-        else:
-            ql_score = df.groupby("user_id")["content_id"].progress_transform(f).astype("float32")
-            df["question_lecture_score"] = ql_score
-
-            # save feature
-            w_df = pd.DataFrame()
-            if not self.is_debug:
-                with open(pickle_path, "wb") as f:
-                    w_df["question_lecture_score"] = ql_score
-                    pickle.dump(w_df, f)
+        ql_score = df.groupby("user_id")["content_id"].progress_transform(f).astype("float32")
+        df["question_lecture_score"] = ql_score
 
         return df
 
@@ -1454,7 +1578,7 @@ class PreviousLecture(FeatureFactory):
         return self
 
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         def f(content_id: int, content_type_id: int):
             if content_type_id == 0:
@@ -1499,14 +1623,21 @@ class ContentLevelEncoder(FeatureFactory):
                  vs_column: Union[str, list],
                  initial_score: float =.0,
                  initial_weight: float = 0,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
         self.column = "content_id"
         self.vs_column = vs_column
         self.initial_score = initial_score
         self.initial_weight = initial_weight
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.is_partial_fit = is_partial_fit
+        self.make_col_name = f"{self.__class__.__name__}_{vs_column}"
         self.data_dict = {}
 
     def fit(self,
@@ -1542,7 +1673,7 @@ class ContentLevelEncoder(FeatureFactory):
                 self.data_dict[key]["count"] = self.data_dict[key]["count"] + len(rate)
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
 
         def f_shift1_mean(series):
@@ -1587,6 +1718,9 @@ class FirstColumnEncoder(FeatureFactory):
     def __init__(self,
                  agg_column: str,
                  astype: str,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
@@ -1602,6 +1736,9 @@ class FirstColumnEncoder(FeatureFactory):
         self.column = "user_id"
         self.agg_column = agg_column
         self.astype = astype
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.split_num = split_num
         self.data_dict = {}
@@ -1620,7 +1757,7 @@ class FirstColumnEncoder(FeatureFactory):
                 self.data_dict[key] = value
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         df[self.make_col_name] = df.groupby("user_id")[self.agg_column].transform("first").astype(self.astype)
         return df
@@ -1647,6 +1784,9 @@ class FirstNAnsweredCorrectly(FeatureFactory):
     def __init__(self,
                  n: int,
                  column: str = "user_id",
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
@@ -1661,6 +1801,9 @@ class FirstNAnsweredCorrectly(FeatureFactory):
         """
         self.n = n
         self.column = column
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.split_num = split_num
         self.data_dict = {}
@@ -1684,7 +1827,7 @@ class FirstNAnsweredCorrectly(FeatureFactory):
 
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         def f(x):
             rets = [""]
@@ -1726,11 +1869,17 @@ class PreviousNAnsweredCorrectly(FeatureFactory):
     def __init__(self,
                  n: int,
                  column: str = "user_id",
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
                  split_num: int = 1,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
         self.n = n
         self.column = column
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.logger = logger
         self.split_num = split_num
         self.data_dict = {}
@@ -1753,7 +1902,7 @@ class PreviousNAnsweredCorrectly(FeatureFactory):
 
         return self
 
-    def all_predict(self,
+    def _all_predict_core(self,
                     df: pd.DataFrame):
         def f(is_bundled, answered_correctly):
             if is_bundled:
@@ -1816,6 +1965,9 @@ class FeatureFactoryManager:
                  feature_factory_dict: Dict[Union[str, tuple],
                                             Dict[str, FeatureFactory]],
                  logger: Logger,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 model_id: str = None,
                  split_num: int=1):
         """
 
@@ -1828,6 +1980,9 @@ class FeatureFactoryManager:
         """
         self.feature_factory_dict = feature_factory_dict
         self.logger = logger
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
         self.split_num = split_num
         """
         for column in feature_factory_dict.keys():
@@ -1838,6 +1993,11 @@ class FeatureFactoryManager:
             for factory_name, factory in dicts.items():
                 factory.logger = logger
                 factory.split_num = split_num
+                factory.model_id = model_id
+                if self.load_feature is not None and factory.load_feature is not None:
+                    factory.load_feature = load_feature
+                if self.save_feature is not None and factory.save_feature is not None:
+                    factory.save_feature = save_feature
 
 
     def fit(self,
