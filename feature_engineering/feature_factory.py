@@ -379,6 +379,108 @@ class PartSeparator(FeatureFactory):
         return f"{self.__class__.__name__}"
 
 
+class ContentIdTargetEncoderAggregator(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = False,
+                 save_feature: bool = False,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.make_col_name = "content_id_target_encode_aggregator"
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return self._predict(df)
+
+    def _predict(self,
+                 df: pd.DataFrame):
+
+        cols = [x for x in df.columns if x[:11] == "target_enc_" and "content_id" in x]
+        print(cols)
+        data = df[cols].values
+        df[f"content_id_te_mean"] = data.mean(axis=1).astype("float32")
+        df[f"content_id_te_max"] = data.max(axis=1).astype("float32")
+        df[f"content_id_te_min"] = data.min(axis=1).astype("float32")
+        return df
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"te_content_id")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+class TargetEncoderAggregator(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = False,
+                 save_feature: bool = False,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.make_col_name = "target_encode_aggregator"
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return df
+
+    def _predict(self,
+                 df: pd.DataFrame):
+
+        cols = [x for x in df.columns if x[:11] == "target_enc_"]
+        print(cols)
+        data = df[cols].values
+        df[f"te_mean"] = data.mean(axis=1).astype("float32")
+        df[f"te_max"] = data.max(axis=1).astype("float32")
+        df[f"te_min"] = data.min(axis=1).astype("float32")
+        return df
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"te_all")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+
+
 class UserCountBinningEncoder(FeatureFactory):
     feature_name_base = ""
 
