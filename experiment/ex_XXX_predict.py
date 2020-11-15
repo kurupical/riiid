@@ -27,7 +27,7 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/ex_065/20201112234833"
+model_dir = "../output/ex_073/20201114084317"
 
 data_types_dict = {
     'row_id': 'int64',
@@ -51,6 +51,7 @@ def get_logger():
 
 def run(debug,
         model_dir,
+        update_record,
         kaggle=False):
 
     if kaggle:
@@ -105,8 +106,6 @@ def run(debug,
 
         if debug:
             update_record = 1
-        else:
-            update_record = 30
         if len(df_test_prev) > update_record:
             logger.info("fitting...")
             df_test_prev["answered_correctly"] = answered_correctlies
@@ -150,9 +149,7 @@ def run(debug,
 
         logger.info("other...")
         df["answered_correctly"] = np.array(predicts).transpose().mean(axis=1)
-        df_sample_prediction = pd.merge(df_sample_prediction[["row_id"]],
-                                        df[["row_id", "answered_correctly"]],
-                                        how="inner")
+        df_sample_prediction = df[df["content_type_id"] == 0][["row_id", "answered_correctly"]]
         env.predict(df_sample_prediction)
         df_test_prev = df_test_prev.append(df[cols + ["user_id", "tags"]])
         if i < 5:
@@ -160,4 +157,5 @@ def run(debug,
 
 if __name__ == "__main__":
     run(debug=True,
-        model_dir=model_dir)
+        model_dir=model_dir,
+        update_record=50)

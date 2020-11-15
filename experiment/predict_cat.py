@@ -156,9 +156,7 @@ def run(debug,
 
         logger.info("other...")
         df["answered_correctly"] = pred_cat
-        df_sample_prediction = pd.merge(df_sample_prediction[["row_id"]],
-                                        df[["row_id", "answered_correctly"]],
-                                        how="inner")
+        df_sample_prediction = df[df["content_type_id"] == 0][["row_id", "answered_correctly"]]
         env.predict(df_sample_prediction)
         df_test_prev = df_test_prev.append(df[cols + ["user_id", "tags"]])
         if i < 5:
