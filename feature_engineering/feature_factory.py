@@ -704,13 +704,13 @@ class PriorQuestionElapsedTimeBinningEncoder(FeatureFactory):
 
 
 
-class TargetEncodeVsUserId(FeatureFactory):
+class TargetEncodeVsUserContentId(FeatureFactory):
     feature_name_base = ""
 
     def __init__(self,
                  model_id: str = None,
-                 load_feature: bool = None,
-                 save_feature: bool = None,
+                 load_feature: bool = False,
+                 save_feature: bool = False,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
         self.load_feature = load_feature
@@ -733,11 +733,18 @@ class TargetEncodeVsUserId(FeatureFactory):
     def _predict(self,
                  df: pd.DataFrame):
 
-        target_cols = [x for x in df.columns if "target_enc_" in x and "user_id" not in x]
+        target_cols = [x for x in df.columns if x[:11] == "target_enc_" and "user_id" not in x]
 
         for col in target_cols:
-            col_name = f"target_enc_user_id_vs_{col}_diff"
+            col_name = f"diff_target_enc_user_id_vs_{col}"
             df[col_name] = df["target_enc_user_id"] - df[col]
+            df[col_name] = df[col_name].astype("float32")
+
+        target_cols = [x for x in df.columns if x[:11] == "target_enc_" and "content_id" not in x]
+
+        for col in target_cols:
+            col_name = f"diff_target_enc_content_id_vs_{col}"
+            df[col_name] = df["target_enc_content_id"] - df[col]
             df[col_name] = df[col_name].astype("float32")
         return df
 
