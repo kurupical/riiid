@@ -7,7 +7,6 @@ from feature_engineering.feature_factory import \
     TagsSeparator, \
     ShiftDiffEncoder, \
     UserLevelEncoder2, \
-    TargetEncodeVsUserId, \
     Counter, \
     PreviousAnswer, \
     PartSeparator, \
@@ -22,7 +21,7 @@ from feature_engineering.feature_factory import \
     TargetEncoderAggregator, \
     SessionEncoder, \
     PreviousNAnsweredCorrectly, \
-    QuestionLectureTableEncoder
+    QuestionLectureTableEncoder2
 from experiment.common import get_logger
 import pandas as pd
 from model.lgbm import train_lgbm_cv
@@ -151,27 +150,31 @@ def make_feature_factory_manager(split_num, model_id=None):
     feature_factory_dict["user_id"]["PreviousAnswer2"] = PreviousAnswer2(groupby="user_id",
                                                                          column="content_id",
                                                                          is_debug=is_debug,
-                                                                         model_id=model_id)
-    feature_factory_dict["user_id"]["PreviousNAnsweredCorrectly"] = PreviousNAnsweredCorrectly(n=3)
+                                                                         model_id=model_id,
+                                                                         n=1000)
+    feature_factory_dict["user_id"]["PreviousNAnsweredCorrectly"] = PreviousNAnsweredCorrectly(n=3,
+                                                                                               is_partial_fit=True)
 
     feature_factory_dict[f"previous_3_ans"] = {
         "TargetEncoder": TargetEncoder(column="previous_3_ans")
     }
-    feature_factory_dict["user_id"]["IntentionCounter"] = Counter(groupby_column="user_id",
-                                                                  agg_column="type_of",
-                                                                  categories=["intention"])
-    feature_factory_dict["user_id"]["QuestionLectureTableEncoder"] = QuestionLectureTableEncoder(model_id=model_id,
-                                                                                                 is_debug=is_debug)
+    feature_factory_dict["user_id"]["QuestionLectureTableEncoder"] = QuestionLectureTableEncoder2(model_id=model_id,
+                                                                                                  is_debug=is_debug,
+                                                                                                  past_n=10)
     feature_factory_dict["post"] = {
         "ContentIdTargetEncoderAggregator": TargetEncoderAggregator()
     }
 
     feature_factory_manager = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
                                                     logger=logger,
-                                                    split_num=split_num)
+                                                    split_num=split_num,
+                                                    model_id=model_id,
+                                                    load_feature=not is_debug,
+                                                    save_feature=not is_debug)
     return feature_factory_manager
 
-for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
+for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*")[8:]:
+    break
     print(fname)
     if is_debug:
         df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)])
@@ -201,8 +204,7 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
     }
     df.tail(1000).to_csv("exp028.csv", index=False)
 
-    df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_3_ans",
-                  "correct_answer", "user_count_bin", "tag", "content_type_id"], axis=1)
+    df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_3_ans"], axis=1)
     df = df[df["answered_correctly"].notnull()]
     print(df.columns)
     print(df.shape)
@@ -216,18 +218,9 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
                   is_debug=is_debug,
                   drop_user_id=True)
 
-    df_oof_lgbm = pd.read_csv(f"{output_dir}/oof_{model_id}_lgbm.csv")
-    df_oof_cat = pd.read_csv(f"{output_dir}/oof_{model_id}_catboost.csv")
-    df_oof = pd.DataFrame()
-    df_oof["target"] = df_oof_lgbm["target"]
-    df_oof["lgbm"] = df_oof_lgbm["predict"]
-    df_oof["cat"] = df_oof_cat["predict"]
-
     if is_debug:
         break
-    break
 
-1/0
 # fit
 df_question = pd.read_csv("../input/riiid-test-answer-prediction/questions.csv",
                           dtype={"bundle_id": "int32",
@@ -241,6 +234,8 @@ df_lecture = pd.read_csv("../input/riiid-test-answer-prediction/lectures.csv",
 feature_factory_manager = make_feature_factory_manager(split_num=1)
 
 for fname in glob.glob("../input/riiid-test-answer-prediction/split10_base/*"):
+    print(fname)
+    model_id = os.path.basename(fname).replace(".pickle", "")
     data_types_dict = {
         'row_id': 'int64',
         'timestamp': 'int64',
@@ -251,6 +246,11 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10_base/*"):
         'user_answer': 'int8',
         'answered_correctly': 'int8',
     }
+
+    feature_factory_manager.model_id = model_id
+    for column, dicts in feature_factory_manager.feature_factory_dict.items():
+        for factory_name, factory in dicts.items():
+            factory.model_id = model_id
 
     if is_debug:
         df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)])

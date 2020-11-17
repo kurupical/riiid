@@ -7,7 +7,6 @@ from feature_engineering.feature_factory import \
     TagsSeparator, \
     ShiftDiffEncoder, \
     UserLevelEncoder2, \
-    TargetEncodeVsUserId, \
     Counter, \
     PreviousAnswer, \
     PartSeparator, \
@@ -40,7 +39,7 @@ from sklearn.metrics import roc_auc_score
 output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
 os.makedirs(output_dir, exist_ok=True)
 
-is_debug = False
+is_debug = True
 wait_time = 0
 if not is_debug:
     for _ in tqdm.tqdm(range(wait_time)):
@@ -151,123 +150,80 @@ def make_feature_factory_manager(split_num, model_id=None):
     feature_factory_dict["user_id"]["PreviousAnswer2"] = PreviousAnswer2(groupby="user_id",
                                                                          column="content_id",
                                                                          is_debug=is_debug,
-                                                                         model_id=model_id)
-    feature_factory_dict["user_id"]["PreviousNAnsweredCorrectly"] = PreviousNAnsweredCorrectly(n=3)
+                                                                         model_id=model_id,
+                                                                         n=1000)
+    feature_factory_dict["user_id"]["PreviousNAnsweredCorrectly"] = PreviousNAnsweredCorrectly(n=3,
+                                                                                               is_partial_fit=True)
 
-    feature_factory_dict[f"previous_3_ans"] = {
-        "TargetEncoder": TargetEncoder(column="previous_3_ans")
-    }
-    feature_factory_dict["user_id"]["IntentionCounter"] = Counter(groupby_column="user_id",
-                                                                  agg_column="type_of",
-                                                                  categories=["intention"])
     feature_factory_dict["user_id"]["QuestionLectureTableEncoder"] = QuestionLectureTableEncoder(model_id=model_id,
                                                                                                  is_debug=is_debug)
     feature_factory_dict["post"] = {
-        "ContentIdTargetEncoderAggregator": TargetEncoderAggregator()
+        "ContentIdTargetEncoderAggregator": TargetEncoderAggregator(),
+        "TargetEncoder": TargetEncoder(column="previous_3_ans")
     }
 
     feature_factory_manager = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
                                                     logger=logger,
-                                                    split_num=split_num)
+                                                    split_num=split_num,
+                                                    model_id=model_id,
+                                                    load_feature=not is_debug,
+                                                    save_feature=not is_debug)
     return feature_factory_manager
 
 for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
     print(fname)
-    if is_debug:
-        df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)])
-    else:
-        df = pd.read_pickle(fname).sort_values(["user_id", "timestamp"]).reset_index(drop=True)
+    df = pd.read_pickle(fname).sort_values(["user_id", "timestamp"]).reset_index(drop=True).head(3000)
     model_id = os.path.basename(fname).replace(".pickle", "")
     df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
     df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
-    feature_factory_manager = make_feature_factory_manager(split_num=10, model_id=model_id)
-    df = feature_factory_manager.all_predict(df)
-    params = {
-        'objective': 'binary',
-        'num_leaves': 96,
-        'max_depth': -1,
-        'learning_rate': 0.3,
-        'boosting': 'gbdt',
-        'bagging_fraction': 0.5,
-        'feature_fraction': 0.7,
-        'bagging_seed': 0,
-        'reg_alpha': 100,  # 1.728910519108444,
-        'reg_lambda': 20,
-        'random_state': 0,
-        'metric': 'auc',
-        'verbosity': -1,
-        "n_estimators": 10000,
-        "early_stopping_rounds": 50
-    }
-    df.tail(1000).to_csv("exp028.csv", index=False)
+    feature_factory_manager = make_feature_factory_manager(split_num=1, model_id=model_id)
+    train_idx = []
+    val_idx = []
+    np.random.seed(0)
+    for _, w_df in df.groupby("user_id"):
+        train_num = (np.random.random(len(w_df)) < 0.8).sum()
+        train_idx.extend(w_df[:train_num].index.tolist())
+        val_idx.extend(w_df[train_num:].index.tolist())
 
-    df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_3_ans",
-                  "correct_answer", "user_count_bin", "tag", "content_type_id"], axis=1)
-    df = df[df["answered_correctly"].notnull()]
-    print(df.columns)
-    print(df.shape)
+    df = feature_factory_manager.all_predict(pd.concat([df.iloc[train_idx], df.iloc[val_idx]]))
+    df = df.drop(["user_answer", "tags", "type_of"], axis=1)
+    df_train = df.iloc[:len(train_idx)]
+    df_val = df.iloc[len(train_idx):]
+    print(df_train)
 
-    print(model_id)
-    train_lgbm_cv(df,
-                  params=params,
-                  output_dir=output_dir,
-                  model_id=model_id,
-                  exp_name=model_id,
-                  is_debug=is_debug,
-                  drop_user_id=True)
+    df2 = pd.read_pickle(fname).sort_values(["user_id", "timestamp"]).reset_index(drop=True)
+    # df2 = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)]).sort_values(["user_id", "timestamp"]).reset_index(drop=True)
+    df2["answered_correctly"] = df2["answered_correctly"].replace(-1, np.nan)
+    df2["prior_question_had_explanation"] = df2["prior_question_had_explanation"].fillna(-1).astype("int8")
+    feature_factory_manager = make_feature_factory_manager(split_num=1, model_id=model_id)
+    feature_factory_manager.fit(df2.iloc[train_idx], is_first_fit=True)
+    df2_val = []
+    for i in tqdm.tqdm(range(len(val_idx))):
+        w_df = df2.iloc[val_idx[i:i+1]]
+        print("---")
+        print(w_df)
+        ww_df = feature_factory_manager.partial_predict(w_df.copy())
+        df2_val.append(ww_df)
+        feature_factory_manager.fit(ww_df.copy())
+    feature_factory_manager = make_feature_factory_manager(split_num=1, model_id=model_id)
+    df2_train = feature_factory_manager.all_predict(df2.iloc[train_idx])
+    df2_val = pd.concat(df2_val)
+    df2_val = df2_val.drop(["user_answer", "tags", "type_of"], axis=1)
 
-    df_oof_lgbm = pd.read_csv(f"{output_dir}/oof_{model_id}_lgbm.csv")
-    df_oof_cat = pd.read_csv(f"{output_dir}/oof_{model_id}_catboost.csv")
-    df_oof = pd.DataFrame()
-    df_oof["target"] = df_oof_lgbm["target"]
-    df_oof["lgbm"] = df_oof_lgbm["predict"]
-    df_oof["cat"] = df_oof_cat["predict"]
+    os.makedirs(output_dir, exist_ok=True)
+    df_train.to_csv("exp088_train.csv", index=False)
+    df_val.to_csv("exp088_all.csv", index=False)
+    df2_val.to_csv("exp088_partial.csv", index=False)
 
-    if is_debug:
-        break
+    for col in df_val.columns:
+        try:
+            np.testing.assert_almost_equal(df_val[col].fillna(-999).values, df2_val[col].fillna(-999).values, decimal=4)
+        except:
+            print(f"diffあり: {col}")
+            out = pd.DataFrame()
+            out["user_id"] = df_val["user_id"].values
+            out["content_id"] = df_val["content_id"].values
+            out["all"] = df_val[col].values
+            out["partial"] = df2_val[col].values
+            out.to_csv(f"{output_dir}/{col}.csv", index=False)
     break
-
-1/0
-# fit
-df_question = pd.read_csv("../input/riiid-test-answer-prediction/questions.csv",
-                          dtype={"bundle_id": "int32",
-                                 "question_id": "int32",
-                                 "correct_answer": "int8",
-                                 "part": "int8"})
-df_lecture = pd.read_csv("../input/riiid-test-answer-prediction/lectures.csv",
-                         dtype={"lecture_id": "int32",
-                                "tag": "int16",
-                                "part": "int8"})
-feature_factory_manager = make_feature_factory_manager(split_num=1)
-
-for fname in glob.glob("../input/riiid-test-answer-prediction/split10_base/*"):
-    data_types_dict = {
-        'row_id': 'int64',
-        'timestamp': 'int64',
-        'user_id': 'int32',
-        'content_id': 'int16',
-        'content_type_id': 'int8',
-        'task_container_id': 'int16',
-        'user_answer': 'int8',
-        'answered_correctly': 'int8',
-    }
-
-    if is_debug:
-        df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)])
-    else:
-        df = pd.read_pickle(fname).sort_values(["user_id", "timestamp"])
-    df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
-    df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
-    df = pd.concat([pd.merge(df[df["content_type_id"] == 0], df_question,
-                             how="left", left_on="content_id", right_on="question_id"),
-                    pd.merge(df[df["content_type_id"] == 1], df_lecture,
-                             how="left", left_on="content_id", right_on="lecture_id")]).sort_values(
-        ["user_id", "timestamp"])
-    # df = feature_factory_manager.feature_factory_dict["content_id"]["TargetEncoder"].all_predict(df)
-    feature_factory_manager.fit(df, is_first_fit=True)
-for dicts in feature_factory_manager.feature_factory_dict.values():
-    for factory in dicts.values():
-        factory.logger = None
-feature_factory_manager.logger = None
-with open(f"{output_dir}/feature_factory_manager.pickle", "wb") as f:
-    pickle.dump(feature_factory_manager, f)
