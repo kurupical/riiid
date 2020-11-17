@@ -317,7 +317,95 @@
 * ex_064: ex_063のdf_train->fit vs all_predict
   * データの順番変えたらそりゃ結果かわるよね -> データの順番も完全一致させる？ -> いや、そこはあわせてたっぽい
 
+# 2020/11/13
+## experiment
+* ex_066: ex_057 + bugfix -> CV: 0.7773(model1) LB: 0.786
+* ex_067: target_enc_content_idをuser_idなどでdiffとりまくる(userにとって簡単かどうか?) -> CV: 0.7780(model1)
+* ex_068: ex_067 + FirstPart, FirstContentId -> CV: 0.7782(model1)
+* ex_069: ex_068 + First1~5Ans -> CV: 0.7780(model1) down...
+* ex_070: ex_068 + user情報からcontentの難しさを測るという発想なら、逆もありでは?
+  * target_enc_user_idをcontent情報系で -> 0.7782(model1)
+* ex_072: ex_070 + map
+* ex_072_0: map作り直し(threshold=300->50)
 
+## EDA
+* 023_first_X_answered_correctly -> 特徴に加えてみる
+  * ![image_31](image_31.png)
+* 024_first_XXX
+  * TOEICの目標点によって変わるのでは?
+    * content_id=7900が圧倒的に多いっぽい
+      * ![image_32](image_32.png)
+    * part: 5が多いっぽい。ただcontent_id=7900はpart=1だけどね。。
+      * ![image_33](image_33.png)
 
+# 2020/11/14
+## experiment
+* ex_073: countencoderを全部抜く -> CV: 0.7779(model0) LB: 0.786
+* ex_074: PreviousAnswer, 500問以上前はnp.nan! (ex_073と内容一緒) model1 only CV: 0.7772(-0.0007)
+* ex_075: ex_066を20Mrow-10model
+* ex_076: ex_074 + session加える, shiftdiffを消す(※SessionEncoderはall_predictしか書いてない) CV: 0.7785
+* ex_077: ex_077 + previous3answer CV: 0.7785 (+ 0.0006)
+* ex_078: ex_074 + intention_count, target_enc_content_id_mean
 
+## EDA
+* 025_session: 学習セッション
+  * sessionごとの正解率：最初が低い。。けどこれはすでに捉えてそう
+    * ![image_34](image_34.png)
+  * sessionごとに今何問目？の正解率
+    * 0~30は低いが、30~で多くなってる。。まあこれも捉えてるんかなぁ…(一番最初のsession影響?)
+    * あと0は極端に低いな
+      * ![image_35](image_35.png)
+      * ![image_36](image_36.png)
+* 026_prev_n_answer_correctly:
+  * あんまりuser_idとの相関もないし、結構効きそうだぞコレは!ただ、fitがリアルタイムじゃないからリークしてるかもなぁ
+    * ![image_37](image_37.png)
+
+## other
+* GCP instance -> あきらめ…
+  * https://qiita.com/inumaru9n/items/e8250af967431c46ad45
+
+# 2020/11/15
+## experiment
+* ex_078: Counter(intention), TargetEncAggわちゃわち -> 0.7782
+* ex_079: 特徴カット(ex_074 base) -> 0.77719
+* ex_080: ql_map -> 0.77910
+* ex_081: ex_076-ex_080をあわせた -> 0.77938
+* ex_082: ex_081のTargetEncをcontent_idにしぼりこみ -> 0.77938(いっしょ)
+* ex_083: Session抜く -> 0.77887
+* ex_084: Session抜いてとりあえず10model -> CV: 0.7786(model1) LB: 0.782 (-0.004)
+* ex_085: ex_084の20Mrow version
+
+## EDA
+* 027_lecture_typeof
+  * intentionはちょっと効くかな?って感じ
+  * ![image_38](image_38.png)
+
+## other
+* performance tuning.
+  * fit
+      * ContentLevelEncoder 90ms -> 50ms
+      * CategoryLevelEncoder 70+80ms -> 10+10ms
+
+# 2020/11/16
+## experiment
+* ex_086: te_content - (te_user系), te_user - (te_content系) -> CV: 0.7779
+
+# 2020/11/17
+## experiment
+* ex_088: bug check
+  * te_xxx: df.values.mean とかにしてた. numpyはnullが１個でもあるとだめだよ
+  * previousNanswer: なんかバグってる -> partial_predictが更新ありの場合、is_partial_fit=Trueだと２回更新されちゃう
+* ex_084をもう一度(CVのみ) -> CV: 0.7785(model1, -0.0001)
+* ex_089: QLtable2
+  * 精度変わらず
+    * QLtableは0-1の引き算, QLtable2は生値？ -> QLtable2を引き算に変更
+    * よくみたら単純にバグってただけ…
+    * QLtable diff -> model1 CV: 0.7798(100epoch)-0.7805(200epoch)
+    * QLtable normal -> model1 CV: 0.7832(100epoch)-0.7841(200epoch)
+* ex_084: もう一度, fitだけしてサブする
+* ex_090: ex_089を20Mrow(GCP)
+
+## other
+* 処理の並列化
+  * https://qiita.com/uo_ta/items/8d265a0f03300ebc2635
 </div>

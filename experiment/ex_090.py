@@ -162,8 +162,6 @@ def make_feature_factory_manager(split_num, model_id=None):
     feature_factory_dict[f"previous_3_ans"] = {
         "TargetEncoder": TargetEncoder(column="previous_3_ans")
     }
-    feature_factory_dict["user_id"]["QuestionLectureTableEncoder"] = QuestionLectureTableEncoder(model_id=model_id,
-                                                                                                 is_debug=is_debug)
     feature_factory_dict["user_id"]["QuestionLectureTableEncoder2"] = QuestionLectureTableEncoder2(model_id=model_id,
                                                                                                    is_debug=is_debug,
                                                                                                    past_n=100)
