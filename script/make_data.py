@@ -33,7 +33,7 @@ df[f"user_id_div{div_num}"] = df["user_id"]%div_num
 
 for user_id, w_df in df.groupby(f"user_id_div{div_num}"):
     print(len(w_df))
-    w_df.drop([f"user_id_div{div_num}", "row_id"], axis=1).to_pickle(f"../input/riiid-test-answer-prediction/split10/train_{user_id}_base.pickle")
+    w_df.drop([f"user_id_div{div_num}", "row_id"], axis=1).to_pickle(f"../input/riiid-test-answer-prediction/split10_base/train_{user_id}.pickle")
     w_df1 = pd.merge(w_df[w_df["content_type_id"]==0], df_question, how="left", left_on="content_id", right_on="question_id")
     w_df2 = pd.merge(w_df[w_df["content_type_id"]==1], df_lecture, how="left", left_on="content_id", right_on="lecture_id")
     w_df = pd.concat([w_df1, w_df2])
