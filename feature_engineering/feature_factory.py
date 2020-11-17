@@ -1286,31 +1286,46 @@ class PreviousAnswer2(FeatureFactory):
                 self.data_dict[user_id]["answered_correctly"] = answer + self.data_dict[user_id]["answered_correctly"][len(content_id):][:self.n]
         return self
 
+    def f(self, data):
+        """
+        何個前の特徴だったか
+        :param series:
+        :return:
+        """
+        series = data["data"]
+        ary = []
+        for i in range(len(series)):
+            ary.append(series.shift(i).values)
+        ary = np.array(ary)  # shape=(len(series), len(series)
+
+        diff_ary = ary[0:1, :] - ary[1:, :]
+        ret = []
+        for i in range(diff_ary.shape[1]):
+            w_ret = np.where(diff_ary[:, i] == 0)[0]
+            if len(w_ret) == 0:
+                ret.append(np.nan)
+            else:
+                ret.append(w_ret[0])
+        return ret
+
     def _all_predict_core(self,
                     df: pd.DataFrame):
-        self.logger.info(f"previous_encoding_all_{self.column}")
-        def f(series):
-            """
-            何個前の特徴だったか
-            :param series:
-            :return:
-            """
-            ary = []
-            for i in range(len(series)):
-                ary.append(series.shift(i).values)
-            ary = np.array(ary) # shape=(len(series), len(series)
+        self.logger.info(f"previous_answer2_all")
 
-            diff_ary = ary[0:1, :] - ary[1:, :]
-            ret = []
-            for i in range(diff_ary.shape[1]):
-                w_ret = np.where(diff_ary[:, i] == 0)[0]
-                if len(w_ret) == 0:
-                    ret.append(None)
-                else:
-                    ret.append(w_ret[0])
-            return ret
-        self.logger.info(f"previous_encoding_all_{self.column}")
-        prev_answer_index = df.groupby("user_id")["content_id"].progress_transform(f).fillna(-99).values
+        # multiprocessはloggerがあるとだめなので、propertyからいったん除外
+        w_logger = self.logger
+        self.logger = None
+        group = df.groupby("user_id")["content_id"]
+        with Pool(cpu_count()) as p:
+            rets = p.map(self.f, [{"data": data} for key, data in tqdm.tqdm(group)])
+
+        # logger復活
+        self.logger = w_logger
+
+        prev_answer_index = []
+        for ret in rets:
+            prev_answer_index.extend(ret)
+        prev_answer_index = [x if not np.isnan(x) else -99 for x in prev_answer_index]
         prev_answer = df.groupby([self.groupby, "content_id"])["answered_correctly"].shift(1).fillna(-99).values
         df[f"previous_answer_index_{self.column}"] = [x if x < self.n else None for x in prev_answer_index]
         df[f"previous_answer_{self.column}"] = [prev_answer[i] if x < self.n else None for i, x in enumerate(prev_answer_index)]
