@@ -8,6 +8,7 @@ import pickle
 import os
 import glob
 import random
+from multiprocessing import Pool, cpu_count
 
 tqdm.tqdm.pandas()
 
@@ -1674,41 +1675,33 @@ class QuestionLectureTableEncoder2(FeatureFactory):
                 self.data_dict[user_id].extend(w_df["content_id"].values.tolist())
         return self
 
-    def _all_predict_core(self,
-                    df: pd.DataFrame):
-        self.logger.info(f"question_lecture_table_encode")
-        def f(w_df):
-            def make_lecture_list(series):
-                ret = []
-                w_ret = []
-                for x in series.values:
-                    w_ret.append(x)
-                    ret.append(w_ret[:])
-                return ret
-
+    def f(self, data):
+        w_df = data["w_df"]
             def calc_score(x):
                 list_lectures = x[0]
                 content_id = x[1]
                 content_type_id = x[2]
-                past_answer = x[3]
+            if x[3] < 0:
+                past_answer = 0
+            else:
+                past_answer = 1
 
                 score = []
                 if content_type_id == 1:
                     return [np.nan]
                 for lec in list_lectures:
-                    if (lec, content_id, 1, past_answer) in self.question_lecture_dict:
-                        score.append(self.question_lecture_dict[(lec, content_id, 1, past_answer)] - \
-                                     self.question_lecture_dict[(lec, content_id, 0, past_answer)])
+                lectured_key = (lec, content_id, 1, past_answer)
+                not_lectured_key = (lec, content_id, 0, past_answer)
+                if lectured_key in self.question_lecture_dict:
+                    w_score = self.question_lecture_dict[lectured_key]
+                    score.append(w_score)
                 return score[-self.past_n:]
-            w_df["w_content_id"] = w_df["content_id"] * w_df["content_type_id"] # content_type_id=0: questionは強制的に全部ゼロ
-            w_df["list_lectures"] = w_df.groupby("user_id")["w_content_id"].transform(make_lecture_list)
-            score = [calc_score(x) for x in w_df[["list_lectures", "content_id", "content_type_id", "previous_answer_content_id"]].values]
-            return score
-        self.logger.info(f"ql_score_encoding")
 
-        df_rets = []
-        for key, w_df in tqdm.tqdm(df.groupby("user_id")):
-            score = f(w_df)
+            w_df["w_content_id"] = w_df["content_id"] * w_df["content_type_id"] # content_type_id=0: questionは強制的に全部ゼロ
+        w_df["w_content_id"] = [[x] for x in w_df["w_content_id"].values]
+        w_df["list_lectures"] = w_df["w_content_id"].cumsum()
+            score = [calc_score(x) for x in w_df[["list_lectures", "content_id", "content_type_id", "previous_answer_content_id"]].values]
+
             df_ret = pd.DataFrame(index=w_df.index)
             expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
             expect_sum = [np.array(x).sum() if len(x) > 0 else np.nan for x in score]
@@ -1721,8 +1714,22 @@ class QuestionLectureTableEncoder2(FeatureFactory):
             df_ret["ql_table2_min"] = expect_min
             df_ret["ql_table2_last"] = expect_last
 
-            df_rets.append(df_ret)
+        return df_ret
 
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"ql_score_encoding")
+
+        # multiprocessはloggerがあるとだめなので、propertyからいったん除外
+        w_logger = self.logger
+        self.logger = None
+
+        group = df.groupby("user_id")
+        with Pool(cpu_count()) as p:
+            df_rets = p.map(self.f, [{"w_df": w_df} for key, w_df in tqdm.tqdm(group)])
+
+        # logger復活
+        self.logger = w_logger
         df_rets = pd.concat(df_rets).sort_index()
 
         for col in df_rets.columns:
@@ -1749,8 +1756,11 @@ class QuestionLectureTableEncoder2(FeatureFactory):
             list_lectures = self.data_dict[user_id]
             score = []
             for lec in list_lectures:
-                if (lec, content_id, 1, past_answer) in self.question_lecture_dict:
-                    score.append(self.question_lecture_dict[(lec, content_id, 1, past_answer)])
+                lectured_key = (lec, content_id, 1, past_answer)
+                # not_lectured_key = (lec, content_id, 0, past_answer)
+                if lectured_key in self.question_lecture_dict:
+                    w_score = self.question_lecture_dict[lectured_key]
+                    score.append(w_score)
             return score
 
         score = [calc_score(x) for x in df[["user_id", "content_id", "content_type_id", "previous_answer_content_id"]].values]

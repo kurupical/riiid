@@ -820,9 +820,9 @@ class PartialAggregatorTestCase(unittest.TestCase):
                            "answered_correctly": answered_correctly,
                            "previous_answer_content_id": past_answered})
 
-        u1_score = [[np.nan], [np.nan], [np.nan], [0.04-0.01, 0.64-0.16]]
-        u2_score = [[np.nan], [np.nan], [0.02-0.005, 0.32-0.08]]
-        u3_score = [[np.nan], [np.nan], [0.04-0.01], [np.nan], [np.nan], [0.64-0.16, 0.64-0.16]]
+        u1_score = [[np.nan], [np.nan], [np.nan], [0.04, 0.64]]
+        u2_score = [[np.nan], [np.nan], [0.02, 0.32]]
+        u3_score = [[np.nan], [np.nan], [0.04], [np.nan], [np.nan], [0.64, 0.64]]
 
         score = u1_score + u2_score + u3_score
 
@@ -855,7 +855,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
                            "content_id": content_id,
                            "content_type_id": content_type_id,
                            "previous_answer_content_id": past_answered})
-        score = [[np.nan], [0.64-0.16, 0.64-0.16], [np.nan]]
+        score = [[np.nan], [0.64, 0.64], [np.nan]]
         expect_mean = [np.array(x).mean() for x in score]
         expect_sum = [np.array(x).sum() for x in score]
         expect_max = [np.array(x).max() for x in score]
