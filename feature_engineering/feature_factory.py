@@ -128,7 +128,8 @@ class FeatureFactory:
         raise ValueError
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         raise NotImplementedError
 
     def __repr__(self):
@@ -159,7 +160,8 @@ class CountEncoder(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         df = self._partial_predict(df)
         df[self.make_col_name] = df[self.make_col_name].fillna(0).astype("int32")
         if "user_id" not in self.make_col_name:
@@ -220,7 +222,8 @@ class Counter(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         cols = []
         for col in self.categories:
             col_name = f"groupby_{self.groupby_column}_{self.agg_column}_{col}_count"
@@ -302,7 +305,8 @@ class TargetEncoder(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         df = self._partial_predict2(df, column=f"target_enc_{self.column}")
         df[self.make_col_name] = df[self.make_col_name].astype("float32")
         if self.initial_weight > 0:
@@ -356,7 +360,8 @@ class TagsSeparator(FeatureFactory):
         return self._predict(df)
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         return self._predict(df)
 
     def __repr__(self):
@@ -407,7 +412,8 @@ class TagsSeparator2(FeatureFactory):
         return self._predict(df)
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         return self._predict(df)
 
     def __repr__(self):
@@ -453,7 +459,8 @@ class PartSeparator(FeatureFactory):
         return self._predict(df)
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         return self._predict(df)
 
     def __repr__(self):
@@ -490,8 +497,7 @@ class ContentIdTargetEncoderAggregator(FeatureFactory):
                  df: pd.DataFrame):
 
         cols = [x for x in df.columns if x[:11] == "target_enc_" and "content_id" in x]
-        print(cols)
-        data = df[cols].values
+        data = df[cols]
         df[f"content_id_te_mean"] = data.mean(axis=1).astype("float32")
         df[f"content_id_te_max"] = data.max(axis=1).astype("float32")
         df[f"content_id_te_min"] = data.min(axis=1).astype("float32")
@@ -504,7 +510,8 @@ class ContentIdTargetEncoderAggregator(FeatureFactory):
         return self._predict(df)
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         return self._predict(df)
 
     def __repr__(self):
@@ -540,11 +547,12 @@ class TargetEncoderAggregator(FeatureFactory):
                  df: pd.DataFrame):
 
         cols = [x for x in df.columns if x[:11] == "target_enc_"]
-        print(cols)
-        data = df[cols].values
+        data = df[cols]
         df[f"te_mean"] = data.mean(axis=1).astype("float32")
         df[f"te_max"] = data.max(axis=1).astype("float32")
         df[f"te_min"] = data.min(axis=1).astype("float32")
+        df[f"te_std"] = data.std(axis=1).astype("float32")
+        df[f"te_peak"] = df[f"te_max"] - df[f"te_min"]
         return df
 
     def _all_predict_core(self,
@@ -554,7 +562,8 @@ class TargetEncoderAggregator(FeatureFactory):
         return self._predict(df)
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         return self._predict(df)
 
     def __repr__(self):
@@ -602,7 +611,8 @@ class UserCountBinningEncoder(FeatureFactory):
         return self._predict(df=df)
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         return self._predict(df=df)
 
     def __repr__(self):
@@ -649,7 +659,8 @@ class PriorQuestionElapsedTimeDiv10Encoder(FeatureFactory):
         return self._predict(df)
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         return self._predict(df)
 
     def __repr__(self):
@@ -697,7 +708,8 @@ class PriorQuestionElapsedTimeBinningEncoder(FeatureFactory):
         return self._predict(df)
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         return self._predict(df)
 
     def __repr__(self):
@@ -756,7 +768,8 @@ class TargetEncodeVsUserContentId(FeatureFactory):
         return self._predict(df)
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         return self._predict(df)
 
     def __repr__(self):
@@ -822,7 +835,8 @@ class MeanAggregator(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         df = self._partial_predict2(df, column=self.make_col_name)
         df[self.make_col_name] = df[self.make_col_name].astype("float32")
         df[f"diff_{self.make_col_name}"] = (df[self.agg_column] - df[self.make_col_name]).astype("float32")
@@ -914,7 +928,8 @@ class UserLevelEncoder2(FeatureFactory):
 
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         for col in [f"user_rate_sum_{self.vs_column}",
                     f"user_rate_mean_{self.vs_column}",
                     f"user_level_{self.vs_column}"]:
@@ -1017,7 +1032,8 @@ class CategoryLevelEncoder(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         for category in self.categories:
             for col in [f"user_rate_sum_{self.agg_column}_{category}",
                         f"user_rate_mean_{self.agg_column}_{category}"]:
@@ -1090,7 +1106,8 @@ class NUniqueEncoder(FeatureFactory):
 
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         df[self.make_col_name] = [len(self.data_dict[x]) if x in self.data_dict else np.nan
                                   for x in df[self.groupby].values]
         df[f"new_ratio_{self.make_col_name}"] = (df[self.make_col_name] / (df[f"count_enc_{self.groupby}"])).astype("float32")
@@ -1162,7 +1179,8 @@ class SessionEncoder(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         """
         リアルタイムfit
         :param df:
@@ -1214,7 +1232,8 @@ class PreviousAnswer(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         def f(x):
             return (x[0]+1)*(x[1]+1)
         df[self.make_col_name] = [self.data_dict[self._make_key(x)] if self._make_key(x) in self.data_dict else np.nan
@@ -1244,6 +1263,7 @@ class PreviousAnswer2(FeatureFactory):
         self.is_debug = is_debug
         self.logger = logger
         self.model_id = model_id
+        if is_partial_fit: raise ValueError("can't partialfit=True")
         self.is_partial_fit = is_partial_fit
         self.data_dict = {}
         self.make_col_name = f"{self.__class__.__name__}_{groupby}_{column}_{n}"
@@ -1300,7 +1320,8 @@ class PreviousAnswer2(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         def get_index(l, x):
             try:
                 ret = l[:self.n].index(x)
@@ -1319,9 +1340,10 @@ class PreviousAnswer2(FeatureFactory):
             user_id = x[0]
             content_id = x[1]
             if user_id not in self.data_dict:
-                self.data_dict[user_id] = {}
-                self.data_dict[user_id]["content_id"] = [content_id]
-                self.data_dict[user_id]["answered_correctly"] = [None]
+                if is_update:
+                    self.data_dict[user_id] = {}
+                    self.data_dict[user_id]["content_id"] = [content_id]
+                    self.data_dict[user_id]["answered_correctly"] = [None]
                 return [None, None]
             last_idx = get_index(self.data_dict[user_id]["content_id"], content_id) # listは逆順になっているので
 
@@ -1329,8 +1351,9 @@ class PreviousAnswer2(FeatureFactory):
                 ret = [None, None]
             else:
                 ret = [self.data_dict[user_id]["answered_correctly"][last_idx], last_idx]
-            self.data_dict[user_id]["content_id"] = [content_id] + self.data_dict[user_id]["content_id"]
-            self.data_dict[user_id]["answered_correctly"] = [None] + self.data_dict[user_id]["answered_correctly"]
+            if is_update:
+                self.data_dict[user_id]["content_id"] = [content_id] + self.data_dict[user_id]["content_id"]
+                self.data_dict[user_id]["answered_correctly"] = [None] + self.data_dict[user_id]["answered_correctly"]
             return ret
 
         ary = [f(x) for x in df[[self.groupby, self.column]].values]
@@ -1384,7 +1407,8 @@ class ShiftDiffEncoder(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         """
         リアルタイムfit
         :param df:
@@ -1408,14 +1432,13 @@ class ShiftDiffEncoder(FeatureFactory):
         w_diff = [x if not np.isnan(x) else f(idx) for idx, x in enumerate(w_diff.values)]
         df[self.make_col_name] = (df[self.column] - w_diff).astype("int64")
 
-        for key, value in df.groupby(self.groupby)[self.column].last().to_dict().items():
-            self.data_dict[key] = value
+        if is_update:
+            for key, value in df.groupby(self.groupby)[self.column].last().to_dict().items():
+                self.data_dict[key] = value
         return df
 
 class QuestionLectureTableEncoder(FeatureFactory):
-    feature_name_base = "previous_answer"
     question_lecture_dict_path = "../feature_engineering/question_lecture_dict.pickle"
-    pickle_path = "../input/feature_engineering/ql_table_{}.pickle"
 
     def __init__(self,
                  model_id: str = None,
@@ -1543,7 +1566,6 @@ class QuestionLectureTableEncoder(FeatureFactory):
             w_df["list_lectures"] = w_df.groupby("user_id")["w_content_id"].transform(make_lecture_list)
             score = [calc_score(x) for x in w_df[["list_lectures", "content_id", "content_type_id"]].values]
             return score
-        pickle_path = self.pickle_path.format(self.model_id)
         self.logger.info(f"ql_score_encoding")
         ql_score = df.groupby("user_id")["content_id"].progress_transform(f).astype("float32")
         df["question_lecture_score"] = ql_score
@@ -1551,7 +1573,8 @@ class QuestionLectureTableEncoder(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         def calc_score(x):
             user_id = x[0]
             content_id = x[1]
@@ -1677,42 +1700,42 @@ class QuestionLectureTableEncoder2(FeatureFactory):
 
     def f(self, data):
         w_df = data["w_df"]
-            def calc_score(x):
-                list_lectures = x[0]
-                content_id = x[1]
-                content_type_id = x[2]
+        def calc_score(x):
+            list_lectures = x[0]
+            content_id = x[1]
+            content_type_id = x[2]
             if x[3] < 0:
                 past_answer = 0
             else:
                 past_answer = 1
 
-                score = []
-                if content_type_id == 1:
-                    return [np.nan]
-                for lec in list_lectures:
+            score = []
+            if content_type_id == 1:
+                return [np.nan]
+            for lec in list_lectures:
                 lectured_key = (lec, content_id, 1, past_answer)
                 not_lectured_key = (lec, content_id, 0, past_answer)
                 if lectured_key in self.question_lecture_dict:
                     w_score = self.question_lecture_dict[lectured_key]
                     score.append(w_score)
-                return score[-self.past_n:]
+            return score[-self.past_n:]
 
-            w_df["w_content_id"] = w_df["content_id"] * w_df["content_type_id"] # content_type_id=0: questionは強制的に全部ゼロ
+        w_df["w_content_id"] = w_df["content_id"] * w_df["content_type_id"] # content_type_id=0: questionは強制的に全部ゼロ
         w_df["w_content_id"] = [[x] for x in w_df["w_content_id"].values]
         w_df["list_lectures"] = w_df["w_content_id"].cumsum()
-            score = [calc_score(x) for x in w_df[["list_lectures", "content_id", "content_type_id", "previous_answer_content_id"]].values]
+        score = [calc_score(x) for x in w_df[["list_lectures", "content_id", "content_type_id", "previous_answer_content_id"]].values]
 
-            df_ret = pd.DataFrame(index=w_df.index)
-            expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
-            expect_sum = [np.array(x).sum() if len(x) > 0 else np.nan for x in score]
-            expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
-            expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
-            expect_last = [x[-1] if len(x) > 0 else np.nan for x in score]
-            df_ret["ql_table2_mean"] = expect_mean
-            df_ret["ql_table2_sum"] = expect_sum
-            df_ret["ql_table2_max"] = expect_max
-            df_ret["ql_table2_min"] = expect_min
-            df_ret["ql_table2_last"] = expect_last
+        df_ret = pd.DataFrame(index=w_df.index)
+        expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
+        expect_sum = [np.array(x).sum() if len(x) > 0 else np.nan for x in score]
+        expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
+        expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
+        expect_last = [x[-1] if len(x) > 0 else np.nan for x in score]
+        df_ret["ql_table2_mean"] = expect_mean
+        df_ret["ql_table2_sum"] = expect_sum
+        df_ret["ql_table2_max"] = expect_max
+        df_ret["ql_table2_min"] = expect_min
+        df_ret["ql_table2_last"] = expect_last
 
         return df_ret
 
@@ -1822,7 +1845,8 @@ class PreviousLecture(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         """
         リアルタイムfit
         :param df:
@@ -1836,10 +1860,11 @@ class PreviousLecture(FeatureFactory):
                 ret = self.data_dict[user_id]
 
             # update dict
-            if content_type_id == 0:
-                self.data_dict[user_id] = None
-            else:
-                self.data_dict[user_id] = content_id
+            if is_update:
+                if content_type_id == 0:
+                    self.data_dict[user_id] = None
+                else:
+                    self.data_dict[user_id] = content_id
             return ret
 
         ret = [f(x[0], x[1], x[2]) for x in df[["user_id", "content_id", "content_type_id"]].values]
@@ -1933,7 +1958,8 @@ class ContentLevelEncoder(FeatureFactory):
 
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         for col in [f"content_rate_sum_{self.vs_column}",
                     f"content_rate_mean_{self.vs_column}",
                     f"content_level_{self.vs_column}"]:
@@ -1995,12 +2021,14 @@ class FirstColumnEncoder(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         def f(user_id, value):
             if user_id in self.data_dict:
                 return self.data_dict[user_id]
             else:
-                self.data_dict[user_id] = value
+                if is_update:
+                    self.data_dict[user_id] = value
                 return value
 
         df[self.make_col_name] = [f(x[0], x[1]) for x in df[[self.column, self.agg_column]].values]
@@ -2079,7 +2107,8 @@ class FirstNAnsweredCorrectly(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         df[self.make_col_name] = [self.data_dict[x] if x in self.data_dict else ""
                                   for x in df[self.column].values]
         return df
@@ -2171,18 +2200,21 @@ class PreviousNAnsweredCorrectly(FeatureFactory):
         return df
 
     def partial_predict(self,
-                        df: pd.DataFrame):
+                        df: pd.DataFrame,
+                        is_update: bool=True):
         def f(user_id, content_type_id):
             if user_id not in self.data_dict:
-                self.data_dict[user_id] = ""
+                if is_update:
+                    self.data_dict[user_id] = ""
                 ret = ""
             else:
                 ret = self.data_dict[user_id]
 
-            if content_type_id == 1:
-                self.data_dict[user_id] = ("9" + self.data_dict[user_id])[:self.n]
-            else:
-                self.data_dict[user_id] = ("8" + self.data_dict[user_id])[:self.n]
+            if is_update:
+                if content_type_id == 1:
+                    self.data_dict[user_id] = ("9" + self.data_dict[user_id])[:self.n]
+                else:
+                    self.data_dict[user_id] = ("8" + self.data_dict[user_id])[:self.n]
             return ret
 
         df[self.make_col_name] = [f(x[0], x[1]) for x in df[["user_id", "content_type_id"]].values]
@@ -2252,7 +2284,7 @@ class FeatureFactoryManager:
             for factory in dicts.values():
                 if factory.is_partial_fit:
                     if not is_first_fit:
-                        df = factory.partial_predict(df)
+                        df = factory.partial_predict(df, is_update=False)
                     else:
                         df = factory.all_predict(df)
                     df = factory.make_feature(df)
