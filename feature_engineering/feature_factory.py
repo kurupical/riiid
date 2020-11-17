@@ -1286,46 +1286,31 @@ class PreviousAnswer2(FeatureFactory):
                 self.data_dict[user_id]["answered_correctly"] = answer + self.data_dict[user_id]["answered_correctly"][len(content_id):][:self.n]
         return self
 
-    def f(self, data):
-        """
-        何個前の特徴だったか
-        :param series:
-        :return:
-        """
-        series = data["data"]
-        ary = []
-        for i in range(len(series)):
-            ary.append(series.shift(i).values)
-        ary = np.array(ary)  # shape=(len(series), len(series)
-
-        diff_ary = ary[0:1, :] - ary[1:, :]
-        ret = []
-        for i in range(diff_ary.shape[1]):
-            w_ret = np.where(diff_ary[:, i] == 0)[0]
-            if len(w_ret) == 0:
-                ret.append(np.nan)
-            else:
-                ret.append(w_ret[0])
-        return ret
-
     def _all_predict_core(self,
                     df: pd.DataFrame):
-        self.logger.info(f"previous_answer2_all")
+        self.logger.info(f"previous_encoding_all_{self.column}")
+        def f(series):
+            """
+            何個前の特徴だったか
+            :param series:
+            :return:
+            """
+            ary = []
+            for i in range(len(series)):
+                ary.append(series.shift(i).values)
+            ary = np.array(ary) # shape=(len(series), len(series)
 
-        # multiprocessはloggerがあるとだめなので、propertyからいったん除外
-        w_logger = self.logger
-        self.logger = None
-        group = df.groupby("user_id")["content_id"]
-        with Pool(cpu_count()) as p:
-            rets = p.map(self.f, [{"data": data} for key, data in tqdm.tqdm(group)])
-
-        # logger復活
-        self.logger = w_logger
-
-        prev_answer_index = []
-        for ret in rets:
-            prev_answer_index.extend(ret)
-        prev_answer_index = [x if not np.isnan(x) else -99 for x in prev_answer_index]
+            diff_ary = ary[0:1, :] - ary[1:, :]
+            ret = []
+            for i in range(diff_ary.shape[1]):
+                w_ret = np.where(diff_ary[:, i] == 0)[0]
+                if len(w_ret) == 0:
+                    ret.append(None)
+                else:
+                    ret.append(w_ret[0])
+            return ret
+        self.logger.info(f"previous_encoding_all_{self.column}")
+        prev_answer_index = df.groupby("user_id")["content_id"].progress_transform(f).fillna(-99).values
         prev_answer = df.groupby([self.groupby, "content_id"])["answered_correctly"].shift(1).fillna(-99).values
         df[f"previous_answer_index_{self.column}"] = [x if x < self.n else None for x in prev_answer_index]
         df[f"previous_answer_{self.column}"] = [prev_answer[i] if x < self.n else None for i, x in enumerate(prev_answer_index)]
@@ -1359,7 +1344,7 @@ class PreviousAnswer2(FeatureFactory):
                     self.data_dict[user_id] = {}
                     self.data_dict[user_id]["content_id"] = [content_id]
                     self.data_dict[user_id]["answered_correctly"] = [None]
-                return [None, None]
+                    return [None, None]
             last_idx = get_index(self.data_dict[user_id]["content_id"], content_id) # listは逆順になっているので
 
             if last_idx is None: # user_idに対して過去content_idの記録がない
@@ -1379,7 +1364,6 @@ class PreviousAnswer2(FeatureFactory):
         df[f"previous_answer_index_{self.column}"] = index_ary
         df[f"previous_answer_index_{self.column}"] = df[f"previous_answer_index_{self.column}"].fillna(-99).astype("int16")
         return df
-
 
 
 class ShiftDiffEncoder(FeatureFactory):
@@ -1606,7 +1590,6 @@ class QuestionLectureTableEncoder(FeatureFactory):
         df["question_lecture_score"] = df["question_lecture_score"].astype("float32")
         return df
 
-
 class QuestionLectureTableEncoder2(FeatureFactory):
     question_lecture_dict_path = "../feature_engineering/question_lecture2_dict.pickle"
 
@@ -1713,61 +1696,57 @@ class QuestionLectureTableEncoder2(FeatureFactory):
                 self.data_dict[user_id].extend(w_df["content_id"].values.tolist())
         return self
 
-    def f(self, data):
-        w_df = data["w_df"]
-        def calc_score(x):
-            list_lectures = x[0]
-            content_id = x[1]
-            content_type_id = x[2]
-            if x[3] < 0:
-                past_answer = 0
-            else:
-                past_answer = 1
-
-            score = []
-            if content_type_id == 1:
-                return [np.nan]
-            for lec in list_lectures:
-                lectured_key = (lec, content_id, 1, past_answer)
-                not_lectured_key = (lec, content_id, 0, past_answer)
-                if lectured_key in self.question_lecture_dict:
-                    w_score = self.question_lecture_dict[lectured_key]
-                    score.append(w_score)
-            return score[-self.past_n:]
-
-        w_df["w_content_id"] = w_df["content_id"] * w_df["content_type_id"] # content_type_id=0: questionは強制的に全部ゼロ
-        w_df["w_content_id"] = [[x] for x in w_df["w_content_id"].values]
-        w_df["list_lectures"] = w_df["w_content_id"].cumsum()
-        score = [calc_score(x) for x in w_df[["list_lectures", "content_id", "content_type_id", "previous_answer_content_id"]].values]
-
-        df_ret = pd.DataFrame(index=w_df.index)
-        expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
-        expect_sum = [np.array(x).sum() if len(x) > 0 else np.nan for x in score]
-        expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
-        expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
-        expect_last = [x[-1] if len(x) > 0 else np.nan for x in score]
-        df_ret["ql_table2_mean"] = expect_mean
-        df_ret["ql_table2_sum"] = expect_sum
-        df_ret["ql_table2_max"] = expect_max
-        df_ret["ql_table2_min"] = expect_min
-        df_ret["ql_table2_last"] = expect_last
-
-        return df_ret
-
     def _all_predict_core(self,
                     df: pd.DataFrame):
+        self.logger.info(f"question_lecture_table_encode")
+        def f(w_df):
+            def make_lecture_list(series):
+                ret = []
+                w_ret = []
+                for x in series.values:
+                    w_ret.append(x)
+                    ret.append(w_ret[:])
+                return ret
+
+            def calc_score(x):
+                list_lectures = x[0]
+                content_id = x[1]
+                content_type_id = x[2]
+                if x[3] < 0:
+                    past_answer = 0
+                else:
+                    past_answer = 1
+
+                score = []
+                if content_type_id == 1:
+                    return [np.nan]
+                for lec in list_lectures:
+                    if (lec, content_id, 1, past_answer) in self.question_lecture_dict:
+                        score.append(self.question_lecture_dict[(lec, content_id, 1, past_answer)])
+                return score[-self.past_n:]
+            w_df["w_content_id"] = w_df["content_id"] * w_df["content_type_id"] # content_type_id=0: questionは強制的に全部ゼロ
+            w_df["list_lectures"] = w_df.groupby("user_id")["w_content_id"].transform(make_lecture_list)
+            score = [calc_score(x) for x in w_df[["list_lectures", "content_id", "content_type_id", "previous_answer_content_id"]].values]
+            return score
         self.logger.info(f"ql_score_encoding")
 
-        # multiprocessはloggerがあるとだめなので、propertyからいったん除外
-        w_logger = self.logger
-        self.logger = None
+        df_rets = []
+        for key, w_df in tqdm.tqdm(df.groupby("user_id")):
+            score = f(w_df)
+            df_ret = pd.DataFrame(index=w_df.index)
+            expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
+            expect_sum = [np.array(x).sum() if len(x) > 0 else np.nan for x in score]
+            expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
+            expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
+            expect_last = [x[-1] if len(x) > 0 else np.nan for x in score]
+            df_ret["ql_table2_mean"] = expect_mean
+            df_ret["ql_table2_sum"] = expect_sum
+            df_ret["ql_table2_max"] = expect_max
+            df_ret["ql_table2_min"] = expect_min
+            df_ret["ql_table2_last"] = expect_last
 
-        group = df.groupby("user_id")
-        with Pool(cpu_count()) as p:
-            df_rets = p.map(self.f, [{"w_df": w_df} for key, w_df in tqdm.tqdm(group)])
+            df_rets.append(df_ret)
 
-        # logger復活
-        self.logger = w_logger
         df_rets = pd.concat(df_rets).sort_index()
 
         for col in df_rets.columns:
@@ -1794,11 +1773,8 @@ class QuestionLectureTableEncoder2(FeatureFactory):
             list_lectures = self.data_dict[user_id]
             score = []
             for lec in list_lectures:
-                lectured_key = (lec, content_id, 1, past_answer)
-                # not_lectured_key = (lec, content_id, 0, past_answer)
-                if lectured_key in self.question_lecture_dict:
-                    w_score = self.question_lecture_dict[lectured_key]
-                    score.append(w_score)
+                if (lec, content_id, 1, past_answer) in self.question_lecture_dict:
+                    score.append(self.question_lecture_dict[(lec, content_id, 1, past_answer)])
             return score
 
         score = [calc_score(x) for x in df[["user_id", "content_id", "content_type_id", "previous_answer_content_id"]].values]
@@ -1820,8 +1796,6 @@ class QuestionLectureTableEncoder2(FeatureFactory):
         df["ql_table2_last"] = df["ql_table2_last"].astype("float32")
 
         return df
-
-
 
 class PreviousLecture(FeatureFactory):
     """
