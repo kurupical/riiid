@@ -34,6 +34,11 @@ experiment/catboost_info/
 
 feature_engineering/question_lecture_dict_backup\.pickle
 
-feature_engineering/question_lecture_dict\.pickle
 
 catboost_info/
+
+feature_engineering/question_lecture_dict_backup_th300\.pickle
+
+feature_engineering/question_lecture_dict_th50\.pickle
+
+feature_engineering/question_lecture_dict\.pickle

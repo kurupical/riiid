@@ -41,7 +41,7 @@ pd.set_option("max_rows", 100)
 output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
 os.makedirs(output_dir, exist_ok=True)
 
-is_debug = True
+is_debug = False
 wait_time = 0
 if not is_debug:
     for _ in tqdm.tqdm(range(wait_time)):
@@ -160,8 +160,6 @@ def make_feature_factory_manager(split_num, model_id=None):
     feature_factory_dict[f"previous_3_ans"] = {
         "TargetEncoder": TargetEncoder(column="previous_3_ans")
     }
-    feature_factory_dict["user_id"]["QuestionLectureTableEncoder"] = QuestionLectureTableEncoder(model_id=model_id,
-                                                                                                 is_debug=is_debug)
     feature_factory_dict["user_id"]["QuestionLectureTableEncoder2"] = QuestionLectureTableEncoder2(model_id=model_id,
                                                                                                    is_debug=is_debug,
                                                                                                    past_n=100)
