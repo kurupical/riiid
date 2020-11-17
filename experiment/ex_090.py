@@ -1,3 +1,5 @@
+import sys
+sys.path.append("..")
 from feature_engineering.feature_factory import \
     FeatureFactoryManager, \
     TargetEncoder, \
@@ -177,18 +179,17 @@ def make_feature_factory_manager(split_num, model_id=None):
                                                     save_feature=not is_debug)
     return feature_factory_manager
 
-for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
-    for i in range(10):
-        if i == 9:
-            filelist = [9, 0]
-        else:
-            filelist = [i, i + 1]
+for i in range(10):
+    if i == 9:
+        filelist = [9, 0]
+    else:
+        filelist = [i, i + 1]
 
-        df = pd.concat(
-            [pd.read_pickle(f"../input/riiid-test-answer-prediction/split10/train_{x}.pickle") for x in filelist])
-        df = df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
-        if is_debug:
-            df = df.head(1000)
+    df = pd.concat(
+        [pd.read_pickle(f"../input/riiid-test-answer-prediction/split10/train_{x}.pickle") for x in filelist])
+    df = df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
+    if is_debug:
+        df = df.head(1000)
 
     model_id = "_".join([str(x) for x in filelist])
     df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
@@ -218,7 +219,7 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
     df = df[df["answered_correctly"].notnull()]
     print(df.columns)
     print(df.shape)
-
+    df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
     print(model_id)
     train_lgbm_cv(df,
                   params=params,
