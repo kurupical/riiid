@@ -1691,9 +1691,11 @@ class QuestionLectureTableEncoder2(FeatureFactory):
         group = df[df["content_type_id"] == 1].groupby("user_id")
         for user_id, w_df in group[["content_type_id", "content_id"]]:
             if user_id not in self.data_dict:
-                self.data_dict[user_id] = w_df["content_id"].values.tolist()
+                self.data_dict[user_id] = w_df["content_id"].values.tolist()[-self.past_n:]
             else:
-                self.data_dict[user_id].extend(w_df["content_id"].values.tolist())
+                update_list = w_df["content_id"].values.tolist()
+                self.data_dict[user_id] = self.data_dict[user_id][:-len(update_list)] + w_df["content_id"].values.tolist()
+                self.data_dict[user_id] = self.data_dict[user_id][-self.past_n:]
         return self
 
     def _all_predict_core(self,
@@ -1704,8 +1706,9 @@ class QuestionLectureTableEncoder2(FeatureFactory):
                 ret = []
                 w_ret = []
                 for x in series.values:
-                    w_ret.append(x)
-                    ret.append(w_ret[:])
+                    if not np.isnan(x):
+                        w_ret.append(x)
+                    ret.append(w_ret[-self.past_n:])
                 return ret
 
             def calc_score(x):
@@ -1724,8 +1727,10 @@ class QuestionLectureTableEncoder2(FeatureFactory):
                     if (lec, content_id, 1, past_answer) in self.question_lecture_dict:
                         score.append(self.question_lecture_dict[(lec, content_id, 1, past_answer)])
                 return score[-self.past_n:]
-            w_df["w_content_id"] = w_df["content_id"] * w_df["content_type_id"] # content_type_id=0: questionは強制的に全部ゼロ
+            w_df["w_content_id"] = w_df["content_id"] * w_df["content_type_id"].replace(0, np.nan) # content_type_id=0: questionは強制的に全部ゼロ
             w_df["list_lectures"] = w_df.groupby("user_id")["w_content_id"].transform(make_lecture_list)
+
+            if len(w_df[w_df["user_id"] == 301590]) > 0: w_df[w_df["user_id"] == 301590].to_csv("aaa.csv")
             score = [calc_score(x) for x in w_df[["list_lectures", "content_id", "content_type_id", "previous_answer_content_id"]].values]
             return score
         self.logger.info(f"ql_score_encoding")
@@ -1761,16 +1766,35 @@ class QuestionLectureTableEncoder2(FeatureFactory):
             user_id = x[0]
             content_id = x[1]
             content_type_id = x[2]
-            past_answer = x[3]
+            if x[3] < 0:
+                past_answer = 0
+            else:
+                past_answer = 1
 
+            if user_id == 301590:
+                print("-----------------")
+                print(f"is_update: {is_update}")
+                print(f"content_id: {content_id}")
+                print(f"list_lectures: {self.data_dict[user_id]}")
             if content_type_id == 1:
                 if is_update:
-                    self.data_dict[user_id].append(content_id)
-                    self.data_dict[user_id] = self.data_dict[user_id][-self.past_n:]
+                    if user_id in self.data_dict:
+                        self.data_dict[user_id].append(content_id)
+                        self.data_dict[user_id] = self.data_dict[user_id][-self.past_n:]
+                    else:
+                        self.data_dict[user_id] = [content_id]
+                if user_id == 301590:
+                    print("---- (updated!)")
+                    print(f"content_id: {content_id}")
+                    print(f"list_lectures: {self.data_dict[user_id]}")
                 return [np.nan]
             if user_id not in self.data_dict:
                 return [np.nan]
             list_lectures = self.data_dict[user_id]
+            if user_id == 301590:
+                print("---- (kotti)")
+                print(f"content_id: {content_id}")
+                print(f"list_lectures: {list_lectures}")
             score = []
             for lec in list_lectures:
                 if (lec, content_id, 1, past_answer) in self.question_lecture_dict:
