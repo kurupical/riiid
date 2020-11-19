@@ -1661,13 +1661,12 @@ class QuestionLectureTableEncoder2(FeatureFactory):
         ret_dict = {}
         df["past_answered"] = (df.groupby(["user_id", "content_id"]).cumcount() > 0).astype("uint8")
         for lecture in tqdm.tqdm(lectures, desc="make_dict..."):
+
             df["lectured"] = \
                 (df.groupby(["user_id"])["content_id"].transform(f, **{"content_id": lecture}) > 0).astype("uint8")
-            df = df[df["lectured"] == 1]
-            for question, w_df in df[df["content_type_id"] == 0].groupby("content_id"):
+            for question, w_df in df[(df["content_type_id"] == 0) & (df["lectured"] == 1)].groupby("content_id"):
                 w_dict_sum = w_df.groupby(["lectured", "past_answered"])["answered_correctly"].sum().to_dict()
                 w_dict_size = w_df.groupby(["lectured", "past_answered"]).size().to_dict()
-                print(w_dict_size)
                 for keys in w_dict_sum:
                     if w_dict_size[keys] > self.min_size:
                         lectured = keys[0]
@@ -1735,7 +1734,6 @@ class QuestionLectureTableEncoder2(FeatureFactory):
             w_df["w_content_id"] = w_df["content_id"] * w_df["content_type_id"].replace(0, np.nan) # content_type_id=0: questionは強制的に全部ゼロ
             w_df["list_lectures"] = w_df.groupby("user_id")["w_content_id"].transform(make_lecture_list)
 
-            if len(w_df[w_df["user_id"] == 301590]) > 0: w_df[w_df["user_id"] == 301590].to_csv("aaa.csv")
             score = [calc_score(x) for x in w_df[["list_lectures", "content_id", "content_type_id", "previous_answer_content_id"]].values]
             return score
         self.logger.info(f"ql_score_encoding")
@@ -2121,6 +2119,88 @@ class FirstNAnsweredCorrectly(FeatureFactory):
     def __repr__(self):
         return f"{self.__class__.__name__}(key={self.column})"
 
+
+class UserAnswerLevelEncoder(FeatureFactory):
+    user_answer_dict_path = "../feature_engineering/user_answer_dict.pickle"
+
+    def __init__(self,
+                 past_n: int,
+                 min_size: int=15,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 question_lecture_dict: Union[Dict[tuple, float], None] = None,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
+        self.past_n = past_n
+        self.min_size = min_size
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.make_col_name = self.__class__.__name__
+        self.data_dict = {}
+        if question_lecture_dict is None:
+            if not os.path.isfile(self.user_answer_dict_path):
+                print("make_new_dict")
+                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
+                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
+                                    ["user_id", "content_id", "content_type_id", "answered_correctly"]] for f in files])
+                print("loaded")
+                self.make_dict(df)
+            with open(self.user_answer_dict_path, "rb") as f:
+                self.question_lecture_dict = pickle.load(f)
+        else:
+            self.question_lecture_dict = question_lecture_dict
+
+    def make_dict(self,
+                  df: pd.DataFrame,
+                  output_dir: str = None):
+        """
+        question_lecture_dictを作って, 所定の場所に保存する
+        :param df:
+        :param is_output:
+        :return:
+        """
+        class EmptyLogger:
+            def __init__(self):
+                pass
+            def info(self, x):
+                pass
+
+        df = df[["user_id", "content_id", "content_type_id", "user_answer", "answered_correctly"]]
+        df = TargetEncoder(column="user_id", logger=EmptyLogger()).all_predict(df[df["content_type_id"] == 0])
+        df = df[df["target_enc_user_id"].notnull()]
+        sum_dict = df.groupby(["content_id", "user_answer"])["target_enc_user_id"].sum().to_dict()
+        size_dict = df.groupby(["content_id", "user_answer"])["target_enc_user_id"].size().to_dict()
+        ret_dict = {}
+        for k in sum_dict.keys():
+            ret_dict[k] = (sum_dict[k] + 0.65*30) / (size_dict[k] + 30)
+
+        if output_dir is None:
+            output_dir = self.user_answer_dict_path
+        with open(output_dir, "wb") as f:
+            pickle.dump(ret_dict, f)
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        return self
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"useranswer")
+
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        return df
 
 
 class PreviousNAnsweredCorrectly(FeatureFactory):

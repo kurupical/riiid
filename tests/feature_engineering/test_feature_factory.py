@@ -1225,5 +1225,47 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
+
+    def test_create_userans_level_dict(self):
+
+        user_id = [0, 0, 0, 0, 0, 1, 0]
+        content_id = [0, 0, 0, 1, 1, 1, 0]
+        content_type_id = [0, 0, 0, 0, 0, 0, 1]
+        user_answer = [0, 1, 1, 3, 1, 3, np.nan]
+        answered_correctly = [1, 1, 0, 1, 1, 1, np.nan]
+
+        df = pd.DataFrame({"user_id": user_id,
+                           "content_id": content_id,
+                           "content_type_id": content_type_id,
+                           "user_answer": user_answer,
+                           "answered_correctly": answered_correctly})
+        pickle_dir = "./test_dict.pickle"
+        if os.path.isdir(pickle_dir):
+            os.remove(pickle_dir)
+
+        # expected target_enc_user_id
+        te = [np.nan, 1/1, 2/2, 2/3, 3/4, np.nan, np.nan]
+
+        # key: (content_id, user_answer)
+        expect = {
+            (0, 1.0): [te[1], te[2]],
+            (1, 1.0): [te[4]], # te[5] = np.nan
+            (1, 3.0): [te[3]]
+        }
+        for key, value in expect.items():
+            expect[key] = (np.array(value).sum() + 30*0.65) / (len(value) + 30)
+
+        cid_useranswer_dict = UserAnswerLevelEncoder(question_lecture_dict={},
+                                                     past_n=2,
+                                                     min_size=0)
+
+        cid_useranswer_dict.make_dict(df, output_dir=pickle_dir)
+        with open(pickle_dir, "rb") as f:
+            actual = pickle.load(f)
+
+        for k in expect.keys():
+            self.assertAlmostEqual(expect[k], actual[k])
+        os.remove(pickle_dir)
+
 if __name__ == "__main__":
     unittest.main()
