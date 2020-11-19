@@ -20,7 +20,8 @@ from feature_engineering.feature_factory import \
     FirstNAnsweredCorrectly, \
     SessionEncoder, \
     PreviousNAnsweredCorrectly, \
-    QuestionLectureTableEncoder2
+    QuestionLectureTableEncoder2, \
+    UserAnswerLevelEncoder
 from experiment.common import get_logger
 import pickle
 import os
@@ -795,7 +796,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
         feature_factory_dict = {
             "user_id": {
                 "QuestionLectureTableEncoder2": QuestionLectureTableEncoder2(question_lecture_dict=question_lecture_dict,
-                                                                             past_n=2)
+                                                                             past_n=2,
+                                                                             min_size=0)
             }
         }
         agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
@@ -906,25 +908,19 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         # key: (lecture_id, question_id, is_lectured, past_answered)
         expect = {
-            (100, 1, 0, 0): [0, 1],
-            (100, 1, 0, 1): [0, 1],
             (100, 1, 1, 0): [1, 1],
             (100, 1, 1, 1): [0, 0],
-            (100, 2, 0, 0): [0, 0],
-            (100, 2, 0, 1): [0, 1],
             (100, 2, 1, 0): [1, 1],
             (100, 2, 1, 1): [1 ,1],
             (100, 3, 1, 0): [1],
             (101, 3, 1, 0): [1],
-            (101, 1, 0, 0): [1, 0, 1, 1],
-            (101, 1, 0, 1): [0, 0, 0, 1],
-            (101, 2, 0, 0): [1, 0, 0, 1],
-            (101, 2, 0, 1): [1, 1, 0, 1]
         }
         for key, value in expect.items():
-            expect[key] = (np.array(value).sum() + 10*0.65) / (len(value) + 10)
+            expect[key] = (np.array(value).sum() + 30*0.65) / (len(value) + 30)
 
-        ql_table_encoder = QuestionLectureTableEncoder2(question_lecture_dict={}, past_n=2)
+        ql_table_encoder = QuestionLectureTableEncoder2(question_lecture_dict={},
+                                                        past_n=2,
+                                                        min_size=0)
 
         ql_table_encoder.make_dict(df, test_mode=True, output_dir=pickle_dir)
         with open(pickle_dir, "rb") as f:
