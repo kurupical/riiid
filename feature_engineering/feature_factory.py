@@ -1595,6 +1595,7 @@ class QuestionLectureTableEncoder2(FeatureFactory):
 
     def __init__(self,
                  past_n: int,
+                 min_size: int=15,
                  model_id: str = None,
                  load_feature: bool = None,
                  save_feature: bool = None,
@@ -1602,6 +1603,16 @@ class QuestionLectureTableEncoder2(FeatureFactory):
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False,
                  is_debug: bool = False):
+        self.past_n = past_n
+        self.min_size = min_size
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.make_col_name = self.__class__.__name__
+        self.data_dict = {}
         if question_lecture_dict is None:
             if not os.path.isfile(self.question_lecture_dict_path):
                 print("make_new_dict")
@@ -1614,15 +1625,6 @@ class QuestionLectureTableEncoder2(FeatureFactory):
                 self.question_lecture_dict = pickle.load(f)
         else:
             self.question_lecture_dict = question_lecture_dict
-        self.past_n = past_n
-        self.load_feature = load_feature
-        self.save_feature = save_feature
-        self.model_id = model_id
-        self.logger = logger
-        self.is_partial_fit = is_partial_fit
-        self.is_debug = is_debug
-        self.make_col_name = self.__class__.__name__
-        self.data_dict = {}
 
     def make_dict(self,
                   df: pd.DataFrame,
@@ -1661,14 +1663,17 @@ class QuestionLectureTableEncoder2(FeatureFactory):
         for lecture in tqdm.tqdm(lectures, desc="make_dict..."):
             df["lectured"] = \
                 (df.groupby(["user_id"])["content_id"].transform(f, **{"content_id": lecture}) > 0).astype("uint8")
+            df = df[df["lectured"] == 1]
             for question, w_df in df[df["content_type_id"] == 0].groupby("content_id"):
                 w_dict_sum = w_df.groupby(["lectured", "past_answered"])["answered_correctly"].sum().to_dict()
                 w_dict_size = w_df.groupby(["lectured", "past_answered"]).size().to_dict()
+                print(w_dict_size)
                 for keys in w_dict_sum:
-                    lectured = keys[0]
-                    past_answered = keys[1]
-                    score = (w_dict_sum[keys] + 0.65 * 10) / (w_dict_size[keys] + 10)
-                    ret_dict[(lecture, question, lectured, past_answered)] = score
+                    if w_dict_size[keys] > self.min_size:
+                        lectured = keys[0]
+                        past_answered = keys[1]
+                        score = (w_dict_sum[keys] + 0.65 * 30) / (w_dict_size[keys] + 30)
+                        ret_dict[(lecture, question, lectured, past_answered)] = score
 
         """
         for lecture in lectures:
@@ -1771,11 +1776,6 @@ class QuestionLectureTableEncoder2(FeatureFactory):
             else:
                 past_answer = 1
 
-            if user_id == 301590:
-                print("-----------------")
-                print(f"is_update: {is_update}")
-                print(f"content_id: {content_id}")
-                print(f"list_lectures: {self.data_dict[user_id]}")
             if content_type_id == 1:
                 if is_update:
                     if user_id in self.data_dict:
@@ -1783,18 +1783,10 @@ class QuestionLectureTableEncoder2(FeatureFactory):
                         self.data_dict[user_id] = self.data_dict[user_id][-self.past_n:]
                     else:
                         self.data_dict[user_id] = [content_id]
-                if user_id == 301590:
-                    print("---- (updated!)")
-                    print(f"content_id: {content_id}")
-                    print(f"list_lectures: {self.data_dict[user_id]}")
                 return [np.nan]
             if user_id not in self.data_dict:
                 return [np.nan]
             list_lectures = self.data_dict[user_id]
-            if user_id == 301590:
-                print("---- (kotti)")
-                print(f"content_id: {content_id}")
-                print(f"list_lectures: {list_lectures}")
             score = []
             for lec in list_lectures:
                 if (lec, content_id, 1, past_answer) in self.question_lecture_dict:
