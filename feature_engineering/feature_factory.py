@@ -1595,7 +1595,7 @@ class QuestionLectureTableEncoder2(FeatureFactory):
 
     def __init__(self,
                  past_n: int,
-                 min_size: int=15,
+                 min_size: int=30,
                  model_id: str = None,
                  load_feature: bool = None,
                  save_feature: bool = None,
@@ -1661,18 +1661,21 @@ class QuestionLectureTableEncoder2(FeatureFactory):
         ret_dict = {}
         df["past_answered"] = (df.groupby(["user_id", "content_id"]).cumcount() > 0).astype("uint8")
         for lecture in tqdm.tqdm(lectures, desc="make_dict..."):
-
-            df["lectured"] = \
-                (df.groupby(["user_id"])["content_id"].transform(f, **{"content_id": lecture}) > 0).astype("uint8")
-            for question, w_df in df[(df["content_type_id"] == 0) & (df["lectured"] == 1)].groupby("content_id"):
-                w_dict_sum = w_df.groupby(["lectured", "past_answered"])["answered_correctly"].sum().to_dict()
-                w_dict_size = w_df.groupby(["lectured", "past_answered"]).size().to_dict()
-                for keys in w_dict_sum:
-                    if w_dict_size[keys] > self.min_size:
-                        lectured = keys[0]
-                        past_answered = keys[1]
-                        score = (w_dict_sum[keys] + 0.65 * 30) / (w_dict_size[keys] + 30)
-                        ret_dict[(lecture, question, lectured, past_answered)] = score
+            df["lectured_flg"] = (df["content_type_id"] == 1).astype("uint8") * (df["content_id"] == lecture).astype("uint8")
+            df["lectured"] = (df.groupby(["user_id"])["lectured_flg"].cumsum() > 0).astype("uint8")
+            # for question, w_df in df[(df["content_type_id"] == 0) & (df["lectured"] == 1)].groupby("content_id"):
+            group = df[(df["content_type_id"] == 0) & (df["lectured"] == 1) & (df["past_answered"] == 1)].groupby(
+                ["content_id", "lectured", "past_answered"]
+            )["answered_correctly"]
+            w_dict_sum = group.sum().to_dict()
+            w_dict_size = group.size().to_dict()
+            for keys in w_dict_sum.keys():
+                if w_dict_size[keys] > self.min_size:
+                    question = keys[0]
+                    lectured = keys[1]
+                    past_answered = keys[2]
+                    score = (w_dict_sum[keys] + 0.65 * 30) / (w_dict_size[keys] + 30)
+                    ret_dict[(lecture, question, lectured, past_answered)] = score
 
         """
         for lecture in lectures:
