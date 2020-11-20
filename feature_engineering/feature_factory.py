@@ -1595,7 +1595,7 @@ class QuestionLectureTableEncoder2(FeatureFactory):
 
     def __init__(self,
                  past_n: int,
-                 min_size: int=30,
+                 min_size: int=100,
                  model_id: str = None,
                  load_feature: bool = None,
                  save_feature: bool = None,
@@ -1664,7 +1664,7 @@ class QuestionLectureTableEncoder2(FeatureFactory):
             df["lectured_flg"] = (df["content_type_id"] == 1).astype("uint8") * (df["content_id"] == lecture).astype("uint8")
             df["lectured"] = (df.groupby(["user_id"])["lectured_flg"].cumsum() > 0).astype("uint8")
             # for question, w_df in df[(df["content_type_id"] == 0) & (df["lectured"] == 1)].groupby("content_id"):
-            group = df[(df["content_type_id"] == 0) & (df["lectured"] == 1) & (df["past_answered"] == 1)].groupby(
+            group = df[(df["content_type_id"] == 0) & (df["lectured"] == 1)].groupby(
                 ["content_id", "lectured", "past_answered"]
             )["answered_correctly"]
             w_dict_sum = group.sum().to_dict()
