@@ -22,7 +22,8 @@ from feature_engineering.feature_factory import \
     SessionEncoder, \
     PreviousNAnsweredCorrectly, \
     QuestionLectureTableEncoder, \
-    QuestionLectureTableEncoder2
+    QuestionLectureTableEncoder2, \
+    MeanAggregator2
 from experiment.common import get_logger
 import pandas as pd
 from model.lgbm import train_lgbm_cv
@@ -41,7 +42,7 @@ pd.set_option("max_rows", 100)
 output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
 os.makedirs(output_dir, exist_ok=True)
 
-is_debug = False
+is_debug = True
 wait_time = 0
 if not is_debug:
     for _ in tqdm.tqdm(range(wait_time)):
@@ -89,6 +90,10 @@ def make_feature_factory_manager(split_num, model_id=None):
     feature_factory_dict["content_id"]["MeanAggregatorShiftDiffTimestamp"] = MeanAggregator(column="content_id",
                                                                                             agg_column="shiftdiff_timestamp_by_user_id",
                                                                                             remove_now=False)
+    for column in ["target_enc_user_id", "prior_question_elapsed_time"]:
+        feature_factory_dict["user_id"][f"MeanAggregatorContentIdUserAnswer{column}"] = MeanAggregator2(column=["content_id", "user_answer"],
+                                                                                                        agg_column=column,
+                                                                                                        remove_now=True)
 
     feature_factory_dict["user_id"]["UserLevelEncoder2ContentId"] = UserLevelEncoder2(vs_column="content_id")
     feature_factory_dict["content_id"]["ContentLevelEncoder2UserId"] = ContentLevelEncoder(vs_column="user_id", is_partial_fit=True)

@@ -21,7 +21,8 @@ from feature_engineering.feature_factory import \
     TargetEncoderAggregator, \
     SessionEncoder, \
     PreviousNAnsweredCorrectly, \
-    QuestionLectureTableEncoder
+    QuestionLectureTableEncoder, \
+    QuestionLectureTableEncoder2
 from experiment.common import get_logger
 import pandas as pd
 from model.lgbm import train_lgbm_cv
@@ -155,11 +156,14 @@ def make_feature_factory_manager(split_num, model_id=None):
     feature_factory_dict["user_id"]["PreviousNAnsweredCorrectly"] = PreviousNAnsweredCorrectly(n=3,
                                                                                                is_partial_fit=True)
 
-    feature_factory_dict["user_id"]["QuestionLectureTableEncoder"] = QuestionLectureTableEncoder(model_id=model_id,
-                                                                                                 is_debug=is_debug)
-    feature_factory_dict["post"] = {
-        "ContentIdTargetEncoderAggregator": TargetEncoderAggregator(),
+    feature_factory_dict[f"previous_3_ans"] = {
         "TargetEncoder": TargetEncoder(column="previous_3_ans")
+    }
+    feature_factory_dict["user_id"]["QuestionLectureTableEncoder2"] = QuestionLectureTableEncoder2(model_id=model_id,
+                                                                                                   is_debug=is_debug,
+                                                                                                   past_n=100)
+    feature_factory_dict["post"] = {
+        "ContentIdTargetEncoderAggregator": TargetEncoderAggregator()
     }
 
     feature_factory_manager = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
@@ -200,8 +204,6 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
     df2_val = []
     for i in tqdm.tqdm(range(len(val_idx))):
         w_df = df2.iloc[val_idx[i:i+1]]
-        print("---")
-        print(w_df)
         ww_df = feature_factory_manager.partial_predict(w_df.copy())
         df2_val.append(ww_df)
         feature_factory_manager.fit(ww_df.copy())

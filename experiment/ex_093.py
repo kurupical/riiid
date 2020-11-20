@@ -64,31 +64,24 @@ def make_feature_factory_manager(split_num, model_id=None):
 
     feature_factory_dict = {}
 
-    for column in ["user_id", "content_id", "part",
-                   ("user_id", "prior_question_had_explanation"), ("user_id", "part"),
+    for column in ["user_id", "content_id", ("user_id", "part"),
                    ("content_id", "prior_question_had_explanation")]:
         is_partial_fit = (column == "content_id" or column == "user_id")
 
         if type(column) == str:
             feature_factory_dict[column] = {
-                "CountEncoder": CountEncoder(column=column, is_partial_fit=is_partial_fit),
                 "TargetEncoder": TargetEncoder(column=column, is_partial_fit=is_partial_fit)
             }
         else:
             feature_factory_dict[column] = {
-                "CountEncoder": CountEncoder(column=list(column), is_partial_fit=is_partial_fit),
                 "TargetEncoder": TargetEncoder(column=list(column), is_partial_fit=is_partial_fit)
             }
     feature_factory_dict["user_id"]["ShiftDiffEncoderTimestamp"] = ShiftDiffEncoder(groupby="user_id",
-                                                                                    column="timestamp",
-                                                                                    is_partial_fit=True)
+                                                                                    column="timestamp")
     for column in ["user_id", "content_id"]:
         feature_factory_dict[column][f"MeanAggregatorPriorQuestionElapsedTimeby{column}"] = MeanAggregator(column=column,
                                                                                                            agg_column="prior_question_elapsed_time",
                                                                                                            remove_now=True)
-    feature_factory_dict["content_id"]["MeanAggregatorShiftDiffTimestamp"] = MeanAggregator(column="content_id",
-                                                                                            agg_column="shiftdiff_timestamp_by_user_id",
-                                                                                            remove_now=False)
 
     feature_factory_dict["user_id"]["UserLevelEncoder2ContentId"] = UserLevelEncoder2(vs_column="content_id")
     feature_factory_dict["content_id"]["ContentLevelEncoder2UserId"] = ContentLevelEncoder(vs_column="user_id", is_partial_fit=True)
@@ -183,6 +176,7 @@ def make_feature_factory_manager(split_num, model_id=None):
     return feature_factory_manager
 
 for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
+    break
     print(fname)
     if is_debug:
         df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)])

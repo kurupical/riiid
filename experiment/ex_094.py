@@ -1,3 +1,5 @@
+import sys
+sys.path.append("..")
 from feature_engineering.feature_factory import \
     FeatureFactoryManager, \
     TargetEncoder, \
@@ -64,31 +66,24 @@ def make_feature_factory_manager(split_num, model_id=None):
 
     feature_factory_dict = {}
 
-    for column in ["user_id", "content_id", "part",
-                   ("user_id", "prior_question_had_explanation"), ("user_id", "part"),
+    for column in ["user_id", "content_id", ("user_id", "part"),
                    ("content_id", "prior_question_had_explanation")]:
         is_partial_fit = (column == "content_id" or column == "user_id")
 
         if type(column) == str:
             feature_factory_dict[column] = {
-                "CountEncoder": CountEncoder(column=column, is_partial_fit=is_partial_fit),
                 "TargetEncoder": TargetEncoder(column=column, is_partial_fit=is_partial_fit)
             }
         else:
             feature_factory_dict[column] = {
-                "CountEncoder": CountEncoder(column=list(column), is_partial_fit=is_partial_fit),
                 "TargetEncoder": TargetEncoder(column=list(column), is_partial_fit=is_partial_fit)
             }
     feature_factory_dict["user_id"]["ShiftDiffEncoderTimestamp"] = ShiftDiffEncoder(groupby="user_id",
-                                                                                    column="timestamp",
-                                                                                    is_partial_fit=True)
+                                                                                    column="timestamp")
     for column in ["user_id", "content_id"]:
         feature_factory_dict[column][f"MeanAggregatorPriorQuestionElapsedTimeby{column}"] = MeanAggregator(column=column,
                                                                                                            agg_column="prior_question_elapsed_time",
                                                                                                            remove_now=True)
-    feature_factory_dict["content_id"]["MeanAggregatorShiftDiffTimestamp"] = MeanAggregator(column="content_id",
-                                                                                            agg_column="shiftdiff_timestamp_by_user_id",
-                                                                                            remove_now=False)
 
     feature_factory_dict["user_id"]["UserLevelEncoder2ContentId"] = UserLevelEncoder2(vs_column="content_id")
     feature_factory_dict["content_id"]["ContentLevelEncoder2UserId"] = ContentLevelEncoder(vs_column="user_id", is_partial_fit=True)
@@ -182,16 +177,19 @@ def make_feature_factory_manager(split_num, model_id=None):
                                                     save_feature=not is_debug)
     return feature_factory_manager
 
-for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
-    print(fname)
+for i in range(10):
+    filelist = [i%10, i%10+1, i%10+2, i%10+3, i%10+4]
+
+    df = pd.concat(
+        [pd.read_pickle(f"../input/riiid-test-answer-prediction/split10/train_{x}.pickle") for x in filelist])
+    df = df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
     if is_debug:
-        df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)])
-    else:
-        df = pd.read_pickle(fname).sort_values(["user_id", "timestamp"]).reset_index(drop=True)
-    model_id = os.path.basename(fname).replace(".pickle", "")
+        df = df.head(1000)
+
+    model_id = "_".join([str(x) for x in filelist])
     df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
     df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
-    feature_factory_manager = make_feature_factory_manager(split_num=10, model_id=model_id)
+    feature_factory_manager = make_feature_factory_manager(split_num=5, model_id=model_id)
     df = feature_factory_manager.all_predict(df)
     params = {
         'objective': 'binary',
@@ -216,7 +214,7 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
     df = df[df["answered_correctly"].notnull()]
     print(df.columns)
     print(df.shape)
-
+    df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
     print(model_id)
     train_lgbm_cv(df,
                   params=params,
