@@ -2361,7 +2361,7 @@ class UserAnswerLevelEncoder(FeatureFactory):
                 print("make_new_dict")
                 files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
                 df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
-                                    ["user_id", "content_id", "content_type_id", "answered_correctly"]] for f in files])
+                                    ["user_id", "content_id", "content_type_id", "answered_correctly", "user_answer"]] for f in files])
                 print("loaded")
                 self.make_dict(df)
             with open(self.user_answer_dict_path, "rb") as f:
@@ -2642,7 +2642,7 @@ class WeightDecayTargetEncoder(FeatureFactory):
             feature_factory_dict: Dict[Union[str, tuple],
                                        Dict[str, FeatureFactory]]):
 
-        ww_df = df.reset_index(drop=True).groupby(self.column).tail(self.past_n)
+        ww_df = df.reset_index(drop=True).groupby(self.column).tail(self.past_n).reset_index(drop=True)
         group = ww_df.groupby(self.column)
         ans_correct = ww_df["answered_correctly"].values # pandas -> np.array変換の時間節約
 
@@ -2652,7 +2652,7 @@ class WeightDecayTargetEncoder(FeatureFactory):
                 continue
             if key not in self.data_dict:
                 start_weight = 1 - self.decay * len(w_df)
-                start_weight += self.decay * 0.01  # np.arange調整用
+                start_weight += self.decay  # np.arange調整用
                 weight = np.arange(start_weight, 1 + self.decay * 0.01, self.decay)
                 weight_sum = weight.sum()
                 value = ans_correct[w_df.index] * weight / weight_sum
@@ -2689,7 +2689,7 @@ class WeightDecayTargetEncoder(FeatureFactory):
                 window=self.past_n, min_periods=1
             ).apply(f).reset_index().astype("float32")
         w_df.columns = ["user_id", "index", self.make_col_name]
-        w_df = w_df.set_index("index")
+        w_df = w_df.set_index("index").drop("user_id", axis=1)
         df = pd.concat([df, w_df], axis=1).reset_index(drop=True)
         df = df.drop("ans_shift1", axis=1)
         return df
