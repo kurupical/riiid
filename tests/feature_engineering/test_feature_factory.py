@@ -21,7 +21,8 @@ from feature_engineering.feature_factory import \
     SessionEncoder, \
     PreviousNAnsweredCorrectly, \
     QuestionLectureTableEncoder2, \
-    UserAnswerLevelEncoder
+    UserAnswerLevelEncoder, \
+    QuestionQuestionTableEncoder
 from experiment.common import get_logger
 import pickle
 import os
@@ -1258,6 +1259,155 @@ class PartialAggregatorTestCase(unittest.TestCase):
         for k in expect.keys():
             self.assertAlmostEqual(expect[k], actual[k])
         os.remove(pickle_dir)
+
+    def test_question_question_table_create(self):
+
+        user1_content_id = [1, 2, 3, 4, 1, 2, 3, 3]
+        user1_answered_correctly = [1, 1, 0, np.nan, 1, 0, 1, 0]
+        user1_content_type_id = [0, 0, 0, 1, 0, 0, 0, 0]
+        user2_content_id = [2, 3, 4, 5]
+        user2_answered_correctly = [1, 1, 1, 1]
+        user2_content_type_id = [0, 0, 0, 0]
+
+        user_id = [1] * len(user1_content_id) + [2] * len(user2_content_id)
+        content_id = user1_content_id + user2_content_id
+        content_type_id = user1_content_type_id + user2_content_type_id
+        ans_c = user1_answered_correctly + user2_answered_correctly
+
+        df = pd.DataFrame({"content_id": content_id,
+                           "user_id": user_id,
+                           "content_type_id": content_type_id,
+                           "answered_correctly": ans_c})
+        pickle_dir = "./test_dict.pickle"
+        if os.path.isdir(pickle_dir):
+            os.remove(pickle_dir)
+
+        # key: (lecture_id, question_id, is_lectured, past_answered)
+        expect = {
+            (1, 2, 1, 0): [ans_c[1]],
+            (1, 3, 1, 0): [ans_c[2]],
+            (2, 3, 1, 0): [ans_c[2], ans_c[9]],
+            (2, 4, 1, 0): [ans_c[10]],
+            (2, 5, 1, 0): [ans_c[11]],
+            (3, 4, 1, 0): [ans_c[10]],
+            (3, 5, 1, 0): [ans_c[11]],
+            (4, 5, 1, 0): [ans_c[11]],
+            (1, 2, 1, 1): [ans_c[5]],
+            (1, 3, 1, 1): [ans_c[6], ans_c[7]],
+            (2, 1, 1, 1): [ans_c[4]],
+            (2, 3, 1, 1): [ans_c[6], ans_c[7]],
+            (3, 1, 1, 1): [ans_c[4]],
+            (3, 2, 1, 1): [ans_c[5]]
+        }
+        for key, value in expect.items():
+            expect[key] = np.array(value).sum() / len(value)
+        qq_table_encoder = QuestionQuestionTableEncoder(question_lecture_dict={},
+                                                        past_n=2,
+                                                        min_size=0)
+
+        qq_table_encoder.make_dict(df, test_mode=True, output_dir=pickle_dir)
+        with open(pickle_dir, "rb") as f:
+            actual = pickle.load(f)
+
+        self.assertEqual(expect, actual)
+        os.remove(pickle_dir)
+
+
+    def test_question_question_table_encoder2(self):
+        logger = get_logger()
+
+        # (lecture, question, is_lectured, past_answered)
+        question_lecture_dict = {
+            (1, 2, 1, 0): 0.005,
+            (1, 2, 1, 1): 0.02,
+            (1, 3, 1, 0): 0.08,
+            (2, 1, 1, 0): 0.32,
+            (2, 1, 1, 1): 1.28,
+            (2, 3, 1, 0): 5.12,
+        }
+        feature_factory_dict = {
+            "user_id": {
+                "QuestionQuestionTableEncoder": QuestionQuestionTableEncoder(question_lecture_dict=question_lecture_dict,
+                                                                             past_n=3,
+                                                                             min_size=0)
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+
+        u1_c_id = [1, 2, 1, 1, 2, 3]
+        u1_c_t_id = [0, 0, 1, 0, 0, 0]
+        u1_p_ans = [-99, -99, -99, 1, 1, -99]
+        u2_c_id = [1, 1, 2, 2]
+        u2_c_t_id = [0, 0, 0, 0]
+        u2_p_ans = [-99, 1, -99, 1]
+
+        user_id = [1]*6 + [2]*4
+        content_id = u1_c_id + u2_c_id
+        content_type_id = u1_c_t_id + u2_c_t_id
+        answered_correctly = [0] * len(content_id)
+        past_answered = u1_p_ans + u2_p_ans
+        df = pd.DataFrame({"user_id": user_id,
+                           "content_id": content_id,
+                           "content_type_id": content_type_id,
+                           "answered_correctly": answered_correctly,
+                           "previous_answer_content_id": past_answered})
+
+        u1_score = [[np.nan], [0.005], [np.nan], [1.28], [0.02], [0.08, 5.12]]
+        u2_score = [[np.nan], [np.nan], [0.005, 0.005], [0.02]]
+
+        score = u1_score + u2_score
+
+        expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
+        expect_sum = [np.array(x).sum() if len(x) > 0 else np.nan for x in score]
+        expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
+        expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
+        expect_last = [x[-1] for x in score]
+
+        df_expect = pd.DataFrame({
+            "qq_table2_mean": expect_mean,
+            "qq_table2_sum": expect_sum,
+            "qq_table2_max": expect_max,
+            "qq_table2_min": expect_min,
+            "qq_table2_last": expect_last
+        })
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        agger.fit(df)
+
+        content_id = [3, 1, 1]
+        content_type_id = [0, 1, 0]
+        past_answered = [-99, 1, 1]
+        df = pd.DataFrame({"user_id": [2, 2, 3],
+                           "content_id": content_id,
+                           "content_type_id": content_type_id,
+                           "previous_answer_content_id": past_answered})
+        score = [[5.12, 5.12], [np.nan], [np.nan]]
+        expect_mean = [np.array(x).mean() for x in score]
+        expect_sum = [np.array(x).sum() for x in score]
+        expect_max = [np.array(x).max() for x in score]
+        expect_min = [np.array(x).min() for x in score]
+        expect_last = [x[-1] for x in score]
+
+        df_expect = pd.DataFrame({
+            "qq_table2_mean": expect_mean,
+            "qq_table2_sum": expect_sum,
+            "qq_table2_max": expect_max,
+            "qq_table2_min": expect_min,
+            "qq_table2_last": expect_last
+        })
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+
 
 if __name__ == "__main__":
     unittest.main()
