@@ -1814,8 +1814,6 @@ class QuestionLectureTableEncoder2(FeatureFactory):
 
         return df
 
-
-
 class QuestionQuestionTableEncoder(FeatureFactory):
     question_lecture_dict_path = "../feature_engineering/question_question_dict.pickle"
 
@@ -2344,11 +2342,11 @@ class UserAnswerLevelEncoder(FeatureFactory):
 
     def __init__(self,
                  past_n: int,
-                 min_size: int=15,
+                 min_size: int=100,
                  model_id: str = None,
                  load_feature: bool = None,
                  save_feature: bool = None,
-                 question_lecture_dict: Union[Dict[tuple, float], None] = None,
+                 user_answer_dict: Union[Dict[tuple, float], None] = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False,
                  is_debug: bool = False):
@@ -2362,7 +2360,7 @@ class UserAnswerLevelEncoder(FeatureFactory):
         self.is_debug = is_debug
         self.make_col_name = self.__class__.__name__
         self.data_dict = {}
-        if question_lecture_dict is None:
+        if user_answer_dict is None:
             if not os.path.isfile(self.user_answer_dict_path):
                 print("make_new_dict")
                 files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
@@ -2371,9 +2369,9 @@ class UserAnswerLevelEncoder(FeatureFactory):
                 print("loaded")
                 self.make_dict(df)
             with open(self.user_answer_dict_path, "rb") as f:
-                self.question_lecture_dict = pickle.load(f)
+                self.user_answer_dict = pickle.load(f)
         else:
-            self.question_lecture_dict = question_lecture_dict
+            self.user_answer_dict = user_answer_dict
 
     def make_dict(self,
                   df: pd.DataFrame,
@@ -2408,17 +2406,107 @@ class UserAnswerLevelEncoder(FeatureFactory):
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
                                        Dict[str, FeatureFactory]]):
+        group = df[df["content_type_id"] == 0].groupby("user_id")
+        for user_id, w_df in group:
+            w_df = w_df[["content_id", "user_answer"]]
+            if user_id not in self.data_dict:
+                self.data_dict[user_id] = [tuple(x) for x in w_df.values][-self.past_n:]
+            else:
+                update_list = [tuple(x) for x in w_df.values]
+                self.data_dict[user_id] = (self.data_dict[user_id] + update_list)[-self.past_n:]
         return self
 
     def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"useranswer")
+        def f(w_df):
+            def make_lecture_list(series):
+                ret = []
+                w_ret = []
+                for x in series.values:
+                    if type(x) == tuple: # content_type_id=1はnp.nan, content_type_id=0はTuple(content_id, user_answer)
+                        w_ret.append(x)
+                    ret.append(w_ret[-self.past_n:])
+                return ret
+
+            def calc_score(x):
+                list_keys = x[0]
+
+                score = []
+                for key in list_keys:
+                    if key in self.user_answer_dict:
+                        score.append(self.user_answer_dict[key])
+                return score[-self.past_n:]
+            w_df["w_content_id"] = w_df["content_id"] * w_df["content_type_id"].replace(1, np.nan).replace(0, 1) # content_type_id=0: questionは強制的に全部ゼロ
+            w_df["key"] = [tuple(x) if not np.isnan(x[0]) else np.nan for x in w_df[["w_content_id", "user_answer"]].values]
+            w_df["list_keys"] = w_df.groupby("user_id")["key"].transform(make_lecture_list)
+
+            score = [calc_score(x) for x in w_df[["list_keys"]].values]
+            return score
+
+        self.logger.info(f"content_ua_score_encoding")
+
+        df_rets = []
+        for key, w_df in tqdm.tqdm(df.groupby("user_id")):
+            score = f(w_df)
+            score = [[np.nan]] + score[:-1] # shift(1)
+            df_ret = pd.DataFrame(index=w_df.index)
+            expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
+            expect_sum = [np.array(x).sum() if len(x) > 0 else np.nan for x in score]
+            expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
+            expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
+            expect_last = [x[-1] if len(x) > 0 else np.nan for x in score]
+            df_ret["content_ua_table2_mean"] = expect_mean
+            df_ret["content_ua_table2_sum"] = expect_sum
+            df_ret["content_ua_table2_max"] = expect_max
+            df_ret["content_ua_table2_min"] = expect_min
+            df_ret["content_ua_table2_last"] = expect_last
+
+            df_rets.append(df_ret)
+
+        df_rets = pd.concat(df_rets).sort_index()
+
+        for col in df_rets.columns:
+            df[col] = df_rets[col].astype("float32")
 
         return df
 
     def partial_predict(self,
                         df: pd.DataFrame,
                         is_update: bool=True):
+        def calc_score(x):
+            user_id = x[0]
+            content_type_id = x[1]
+
+            score = []
+            if content_type_id == 1:
+                return [np.nan]
+            if not user_id in self.data_dict:
+                return [np.nan]
+
+            for key in self.data_dict[user_id]:
+                if key in self.user_answer_dict:
+                    score.append(self.user_answer_dict[tuple(key)])
+            return score[-self.past_n:]
+
+        score = [calc_score(x) for x in df[["user_id", "content_type_id"]].values]
+        expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
+        expect_sum = [np.array(x).sum() if len(x) > 0 else np.nan for x in score]
+        expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
+        expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
+        expect_last = [x[-1] if len(x) > 0 else np.nan for x in score]
+        df["content_ua_table2_mean"] = expect_mean
+        df["content_ua_table2_sum"] = expect_sum
+        df["content_ua_table2_max"] = expect_max
+        df["content_ua_table2_min"] = expect_min
+        df["content_ua_table2_last"] = expect_last
+
+        df["content_ua_table2_mean"] = df["content_ua_table2_mean"].astype("float32")
+        df["content_ua_table2_sum"] = df["content_ua_table2_sum"].astype("float32")
+        df["content_ua_table2_max"] = df["content_ua_table2_max"].astype("float32")
+        df["content_ua_table2_min"] = df["content_ua_table2_min"].astype("float32")
+        df["content_ua_table2_last"] = df["content_ua_table2_last"].astype("float32")
+
         return df
 
 

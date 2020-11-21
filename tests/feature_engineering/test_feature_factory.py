@@ -1252,7 +1252,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
         for key, value in expect.items():
             expect[key] = (np.array(value).sum() + 30*0.65) / (len(value) + 30)
 
-        cid_useranswer_dict = UserAnswerLevelEncoder(question_lecture_dict={},
+        cid_useranswer_dict = UserAnswerLevelEncoder(user_answer_dict={},
                                                      past_n=2,
                                                      min_size=0)
 
@@ -1263,6 +1263,98 @@ class PartialAggregatorTestCase(unittest.TestCase):
         for k in expect.keys():
             self.assertAlmostEqual(expect[k], actual[k])
         os.remove(pickle_dir)
+
+    def test_userans_level(self):
+        logger = get_logger()
+
+        # key: (content_id, user_answer)
+        user_answer_dict = {
+            (101, 1): 0.005,
+            (101, 2): 0.01,
+            (102, 1): 0.02,
+            (102, 2): 0.04
+        }
+        feature_factory_dict = {
+            "user_id": {
+                "UserAnswerLevelEncoder": UserAnswerLevelEncoder(user_answer_dict=user_answer_dict,
+                                                                 past_n=2,
+                                                                 min_size=0)
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        u1_c_id = [101, 101, 102, 101, 102]
+        u1_u_answer = [1, 2, 1, np.nan, 2]
+        u1_c_t_id = [0, 0, 0, 1, 0]
+        u2_c_id = [102, 102]
+        u2_u_answer = [1, 2]
+        u2_c_t_id = [0, 0]
+
+        user_id = [1]*5 + [2]*2
+        user_answer = u1_u_answer + u2_u_answer
+        content_id = u1_c_id + u2_c_id
+        content_type_id = u1_c_t_id + u2_c_t_id
+        answered_correctly = [0] * len(content_id)
+        df = pd.DataFrame({"user_id": user_id,
+                           "content_id": content_id,
+                           "user_answer": user_answer,
+                           "content_type_id": content_type_id,
+                           "answered_correctly": answered_correctly})
+
+        u1_score = [[np.nan], [0.005], [0.005, 0.01], [0.01, 0.02], [0.01, 0.02]]
+        u2_score = [[np.nan], [0.02]]
+
+        score = u1_score + u2_score
+
+        expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
+        expect_sum = [np.array(x).sum() if len(x) > 0 else np.nan for x in score]
+        expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
+        expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
+        expect_last = [x[-1] for x in score]
+
+        df_expect = pd.DataFrame({
+            "content_ua_table2_mean": expect_mean,
+            "content_ua_table2_sum": expect_sum,
+            "content_ua_table2_max": expect_max,
+            "content_ua_table2_min": expect_min,
+            "content_ua_table2_last": expect_last
+        })
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        user_id = [1, 2, 3]
+        content_id = [101, 102, 101]
+        content_type_id = [0, 1, 0]
+        df = pd.DataFrame({"user_id": user_id,
+                           "content_id": content_id,
+                           "content_type_id": content_type_id})
+        score = [[0.02, 0.04], [np.nan], [np.nan]]
+        expect_mean = [np.array(x).mean() for x in score]
+        expect_sum = [np.array(x).sum() for x in score]
+        expect_max = [np.array(x).max() for x in score]
+        expect_min = [np.array(x).min() for x in score]
+        expect_last = [x[-1] for x in score]
+
+        df_expect = pd.DataFrame({
+            "content_ua_table2_mean": expect_mean,
+            "content_ua_table2_sum": expect_sum,
+            "content_ua_table2_max": expect_max,
+            "content_ua_table2_min": expect_min,
+            "content_ua_table2_last": expect_last
+        })
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
 
     def test_question_question_table_create(self):
 
