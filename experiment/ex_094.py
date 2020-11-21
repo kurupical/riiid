@@ -187,7 +187,7 @@ for i in range(10):
     if is_debug:
         df = df.head(1000)
 
-    model_id = "_".join([str(x) for x in targetlist])
+    model_id = "_".join([str(x) for x in filelist])
     df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
     df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
     feature_factory_manager = make_feature_factory_manager(split_num=2, model_id=model_id)
