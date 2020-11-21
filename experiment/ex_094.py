@@ -178,7 +178,8 @@ def make_feature_factory_manager(split_num, model_id=None):
     return feature_factory_manager
 
 for i in range(10):
-    filelist = [i%10, i%10+1, i%10+2, i%10+3, i%10+4]
+    filelist = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    targetlist = [i%10, i%10+1, i%10+2, i%10+3, i%10+4]
 
     df = pd.concat(
         [pd.read_pickle(f"../input/riiid-test-answer-prediction/split10/train_{x}.pickle") for x in filelist])
@@ -208,6 +209,10 @@ for i in range(10):
         "n_estimators": 10000,
         "early_stopping_rounds": 50
     }
+    df["user_id_div10"] = df["user_id"] % 10
+    df = df[df["user_id_div10"].isin(targetlist)]
+    df = df.drop("user_id_div10")
+
     df.tail(1000).to_csv("exp028.csv", index=False)
 
     df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_3_ans"], axis=1)
