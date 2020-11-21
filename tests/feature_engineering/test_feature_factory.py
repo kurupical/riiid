@@ -909,8 +909,12 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         # key: (lecture_id, question_id, is_lectured, past_answered)
         expect = {
+            (100, 1, 1, 0): [1, 1],
             (100, 1, 1, 1): [0, 0],
+            (100, 2, 1, 0): [1, 1],
             (100, 2, 1, 1): [1 ,1],
+            (100, 3, 1, 0): [1],
+            (101, 3, 1, 0): [1],
         }
         for key, value in expect.items():
             expect[key] = (np.array(value).sum() + 30*0.65) / (len(value) + 30)
