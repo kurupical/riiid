@@ -190,7 +190,7 @@ for i in range(10):
     model_id = "_".join([str(x) for x in filelist])
     df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
     df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
-    feature_factory_manager = make_feature_factory_manager(split_num=5, model_id=model_id)
+    feature_factory_manager = make_feature_factory_manager(split_num=2, model_id=model_id)
     df = feature_factory_manager.all_predict(df)
     params = {
         'objective': 'binary',
@@ -211,7 +211,7 @@ for i in range(10):
     }
     df["user_id_div10"] = df["user_id"] % 10
     df = df[df["user_id_div10"].isin(targetlist)]
-    df = df.drop("user_id_div10")
+    df = df.drop("user_id_div10", axis=1)
 
     df.tail(1000).to_csv("exp028.csv", index=False)
 
