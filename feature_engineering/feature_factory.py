@@ -1906,7 +1906,6 @@ class QuestionQuestionTableEncoder(FeatureFactory):
                                        Dict[str, FeatureFactory]]):
         group = df[df["content_type_id"] == 0].groupby("user_id")
         for user_id, w_df in group[["content_type_id", "content_id"]]:
-            print(w_df)
             if user_id not in self.data_dict:
                 self.data_dict[user_id] = w_df["content_id"].values.tolist()[-self.past_n:]
             else:
@@ -1998,11 +1997,8 @@ class QuestionQuestionTableEncoder(FeatureFactory):
             if user_id not in self.data_dict:
                 return [np.nan]
             list_lectures = self.data_dict[user_id]
-            print(list_lectures)
-            print(self.question_lecture_dict)
             score = []
             for lec in list_lectures:
-                print((lec, content_id, 1, past_answer))
                 if (lec, content_id, 1, past_answer) in self.question_lecture_dict:
                     score.append(self.question_lecture_dict[(lec, content_id, 1, past_answer)])
             return score
@@ -2614,6 +2610,96 @@ class PreviousNAnsweredCorrectly(FeatureFactory):
 
     def __repr__(self):
         return f"{self.__class__.__name__}(key={self.column})"
+
+
+
+class WeightDecayTargetEncoder(FeatureFactory):
+    feature_name_base = "weighted_te_user_id"
+
+    def __init__(self,
+                 column: Union[list, str],
+                 past_n: int = 100,
+                 decay: float = 0.006,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 split_num: int = 1,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        super().__init__(column=column,
+                         split_num=split_num,
+                         logger=logger,
+                         is_partial_fit=is_partial_fit)
+        self.past_n = past_n
+        self.decay = decay
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.make_col_name = f"{self.feature_name_base}_past{past_n}_decay{decay}"
+
+    def fit(self,
+            df,
+            feature_factory_dict: Dict[Union[str, tuple],
+                                       Dict[str, FeatureFactory]]):
+
+        ww_df = df.reset_index(drop=True).groupby(self.column).tail(self.past_n)
+        group = ww_df.groupby(self.column)
+        ans_correct = ww_df["answered_correctly"].values # pandas -> np.array変換の時間節約
+
+        for key, w_df in group:
+            w_df = w_df[w_df["answered_correctly"].notnull()]
+            if len(w_df) == 0:
+                continue
+            if key not in self.data_dict:
+                start_weight = 1 - self.decay * len(w_df)
+                start_weight += self.decay * 0.01  # np.arange調整用
+                weight = np.arange(start_weight, 1 + self.decay * 0.01, self.decay)
+                weight_sum = weight.sum()
+                value = ans_correct[w_df.index] * weight / weight_sum
+                self.data_dict[key] = {}
+                self.data_dict[key][self.make_col_name] = value
+                self.data_dict[key]["ans_ary"] = ans_correct[w_df.index]
+
+            else:
+                ans_ary = np.concatenate([self.data_dict[key]["ans_ary"], ans_correct[w_df.index]])[-self.past_n:]
+                start_weight = 1 - self.decay * len(ans_ary)
+                start_weight += self.decay  # np.arange調整用
+                weight = np.arange(start_weight, 1 + self.decay * 0.01, self.decay)
+
+                value = (ans_ary * weight).sum() / weight.sum()
+                self.data_dict[key][self.make_col_name] = value
+                self.data_dict[key]["ans_ary"] = ans_ary
+
+        return self
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        def f(series):
+            series = series[series.notnull()]
+            if len(series) == 0:
+                return np.nan
+            start_weight = 1 - self.decay * len(series)
+            start_weight += self.decay
+            weight = np.arange(start_weight, 1 + self.decay*0.01, self.decay)
+            return (series * weight).sum() / weight.sum()
+
+        self.logger.info(f"weightdecay_target_encoding_all_{self.column}")
+        df["ans_shift1"] = df.groupby(self.column)[["user_id", "answered_correctly"]].shift(1)
+        w_df = df.groupby(self.column)["ans_shift1"].rolling(
+                window=self.past_n, min_periods=1
+            ).apply(f).reset_index().astype("float32")
+        w_df.columns = ["user_id", "index", self.make_col_name]
+        w_df = w_df.set_index("index")
+        df = pd.concat([df, w_df], axis=1).reset_index(drop=True)
+        df = df.drop("ans_shift1", axis=1)
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        df = self._partial_predict2(df, column=self.make_col_name)
+        df[self.make_col_name] = df[self.make_col_name].astype("float32")
+        return df
 
 
 class FeatureFactoryManager:

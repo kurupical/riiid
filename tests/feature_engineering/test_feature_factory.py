@@ -22,7 +22,8 @@ from feature_engineering.feature_factory import \
     PreviousNAnsweredCorrectly, \
     QuestionLectureTableEncoder2, \
     UserAnswerLevelEncoder, \
-    QuestionQuestionTableEncoder
+    QuestionQuestionTableEncoder, \
+    WeightDecayTargetEncoder
 from experiment.common import get_logger
 import pickle
 import os
@@ -1500,6 +1501,85 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         df_expect = df_expect.astype("float32")
         df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+
+
+    def test_weighted_target_encoder(self):
+        logger = get_logger()
+
+        feature_factory_dict = {
+            "user_id": {
+                "WeightedTargetEncoder": WeightDecayTargetEncoder(column="user_id",
+                                                                  past_n=3,
+                                                                  decay=0.1)
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+
+        user1_ans = [0, 0, 1, 0, np.nan, 1]
+        user2_ans = [0, 1]
+        user1_ans_2 = [1]
+        user_id = [0]*6 + [1]*2 + [0]*1
+        answered_correctly = user1_ans + user2_ans + user1_ans_2
+
+        df = pd.DataFrame({"user_id": user_id,
+                           "answered_correctly": answered_correctly})
+
+        expect = [
+            np.nan,
+            (user1_ans[0]*1) / 1,
+            (user1_ans[0]*0.9 + user1_ans[1]*1) / 1.9,
+            (user1_ans[0]*0.8 + user1_ans[1]*0.9 + user1_ans[2]*1) / 2.7,
+            (user1_ans[1]*0.8 + user1_ans[2]*0.9 + user1_ans[3]*1) / 2.7,
+            (user1_ans[2]*0.9 + user1_ans[3]*1) / 1.9,
+            np.nan,
+            (user2_ans[0]*1) / 1,
+            (user1_ans[3]*0.9 + user1_ans[5]*1) / 1.9
+        ]
+
+        df_expect = pd.DataFrame({"weighted_te_user_id_past3_decay0.1": expect}).astype("float32")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        # partial_predict1
+        ans_partial1 = [1, 1, 1, np.nan]
+        df1 = pd.DataFrame({"user_id": [0, 1, 2, 2],
+                            "answered_correctly": ans_partial1})
+
+        expect = [
+            (user1_ans[3]*0.8 + user1_ans[5]*0.9 + user1_ans_2[0]*1) / 2.7,
+            (user2_ans[0]*0.9 + user2_ans[1]*1) / 1.9,
+            np.nan,
+            np.nan
+        ]
+        df_expect = pd.DataFrame({"weighted_te_user_id_past3_decay0.1": expect}).astype("float32")
+        df_actual = agger.partial_predict(df1)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        agger.fit(df1)
+        # partial_predict2
+
+        df2 = pd.DataFrame({"user_id": [0, 0, 1, 2],
+                            "answered_correctly": [0, np.nan, 0, 0]})
+
+        expect = [
+            (user1_ans[5]*0.8 + user1_ans_2[0]*0.9 + ans_partial1[0]*1) / 2.7,
+            (user1_ans[5]*0.8 + user1_ans_2[0]*0.9 + ans_partial1[0]*1) / 2.7,
+            (user2_ans[0]*0.8 + user2_ans[1]*0.9 + ans_partial1[1]*1) / 2.7,
+            (ans_partial1[2]*1) / 1
+        ]
+
+        df_expect = pd.DataFrame({"weighted_te_user_id_past3_decay0.1": expect}).astype("float32")
+        df_actual = agger.partial_predict(df2)
 
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
