@@ -1279,8 +1279,8 @@ class PreviousAnswer2(FeatureFactory):
             answer = w_df["answered_correctly"].values[::-1].tolist()
             if user_id not in self.data_dict:
                 self.data_dict[user_id] = {}
-                self.data_dict[user_id]["content_id"] = content_id
-                self.data_dict[user_id]["answered_correctly"] = answer
+                self.data_dict[user_id]["content_id"] = content_id[:self.n]
+                self.data_dict[user_id]["answered_correctly"] = answer[:self.n]
             else:
                 self.data_dict[user_id]["content_id"] = content_id + self.data_dict[user_id]["content_id"][len(content_id):][:self.n]
                 self.data_dict[user_id]["answered_correctly"] = answer + self.data_dict[user_id]["answered_correctly"][len(content_id):][:self.n]
