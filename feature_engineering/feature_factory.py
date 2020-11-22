@@ -2333,6 +2333,174 @@ class FirstNAnsweredCorrectly(FeatureFactory):
         return f"{self.__class__.__name__}(key={self.column})"
 
 
+
+class UserContentRateEncoder(FeatureFactory):
+    feature_name_base = "target_enc"
+    dict_path = "../feature_engineering/content_user_rate_dict.pickle"
+
+    def __init__(self,
+                 column: Union[list, str],
+                 content_rate_dict: dict = None,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 split_num: int = 1,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        super().__init__(column=column,
+                         split_num=split_num,
+                         logger=logger,
+                         is_partial_fit=is_partial_fit)
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        if content_rate_dict is None:
+            if not os.path.isfile(self.dict_path):
+                print("make_new_dict")
+                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
+                df = pd.concat([pd.read_pickle(f)[
+                                    ["user_id", "timestamp", "content_id", "content_type_id", "answered_correctly"]
+                ] for f in files]).sort_values(["user_id", "timestamp"])
+                print("loaded")
+                self.make_dict(df)
+            with open(self.dict_path, "rb") as f:
+                self.content_rate_dict = pickle.load(f)
+        else:
+            self.content_rate_dict = content_rate_dict
+
+    def make_dict(self,
+                  df: pd.DataFrame,
+                  output_dir: str=None):
+
+        df = df[df["content_type_id"] == 0].sort_values(["user_id", "timestamp"])
+        df = df[["user_id", "content_id", "answered_correctly"]]
+
+        content_dict = {}
+        user_dict = {}
+
+        for x in tqdm.tqdm(df.values):
+            user_id = x[0]
+            content_id = x[1]
+            answered_correctly = x[2]
+
+            if user_id not in user_dict:
+                user_dict[user_id] = 1500
+            if content_id not in content_dict:
+                content_dict[content_id] = 1500
+
+            user_rate = user_dict[user_id]
+            content_rate = content_dict[content_id]
+
+            if answered_correctly == 0:
+                diff = 16 + int((user_rate - content_rate) * 0.04)
+                user_dict[user_id] -= diff
+                content_dict[content_id] += diff
+
+            if answered_correctly == 1:
+                diff = 16 + int((content_rate - user_rate) * 0.04)
+
+                user_dict[user_id] += diff
+                content_dict[content_id] -= diff
+
+        if output_dir is None:
+            output_dir = self.dict_path
+        with open(output_dir, "wb") as f:
+            pickle.dump(content_dict, f)
+
+    def update_dict(self,
+                    user_dict: Dict[int, int],
+                    user_key: Union[str, tuple],
+                    content_id: str,
+                    answered_correctly: int):
+
+        if user_key not in user_dict:
+            user_dict[user_key] = 1500
+        user_rate = user_dict[user_key]
+        content_rate = self.content_rate_dict[content_id]
+
+        if answered_correctly == 0:
+            diff = 16 + int((user_rate - content_rate) * 0.04)
+            user_dict[user_key] -= diff
+
+        if answered_correctly == 1:
+            diff = 16 + int((content_rate - user_rate) * 0.04)
+            user_dict[user_key] += diff
+
+    def fit(self,
+            df,
+            feature_factory_dict: Dict[Union[str, tuple],
+                                       Dict[str, FeatureFactory]]):
+
+        columns = []
+        if type(self.column) == str:
+            columns = ["content_id", "answered_correctly", self.column]
+        if type(self.column) == list:
+            columns = ["content_id", "answered_correctly"] + self.column
+
+        for x in df[df["content_type_id"] == 0][columns].values:
+            content_id = x[0]
+            answered_correctly = x[1]
+            if type(self.column) == str:
+                user_key = x[2]
+            else:
+                user_key = [tuple(x) for x in x[2:]]
+            self.update_dict(user_dict=self.data_dict,
+                             user_key=user_key,
+                             content_id=content_id,
+                             answered_correctly=answered_correctly)
+
+        return self
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+
+        user_dict = {}
+        def f(user_key, content_id, content_type_id, answered_correctly):
+            if content_type_id == 1:
+                return -1
+
+            if user_key not in user_dict:
+                user_dict[user_key] = 1500
+                ret = 1500
+            else:
+                ret = user_dict[user_key]
+
+            self.update_dict(user_dict=user_dict,
+                             user_key=user_key,
+                             content_id=content_id,
+                             answered_correctly=answered_correctly)
+            return ret
+
+        df["content_rating"] = [self.content_rate_dict[x[0]] if x[1] == 0 else -1
+                              for x in df[["content_id", "content_type_id"]].values]
+        if type(self.column) == str:
+            keys = df[self.column].values
+        else:
+            keys = [tuple(x) for x in df[self.column]]
+        df[f"{self.column}_rating"] = [f(key, x[0], x[1], x[2]) for key, x in zip(keys, df[["content_id", "content_type_id", "answered_correctly"]].values)]
+
+        df["content_rating"] = df["content_rating"].astype("int16")
+        df[f"{self.column}_rating"] = df[f"{self.column}_rating"].astype("int16")
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        def f(user_id, content_type_id):
+            if content_type_id == 1:
+                return -1
+            if user_id in self.data_dict:
+                return self.data_dict[user_id]
+            else:
+                return 1500
+        df[f"{self.column}_rating"] = [f(x[0], x[1]) for x in df[["user_id", "content_type_id"]].values]
+        df["content_rating"] = [self.content_rate_dict[x[0]] if x[1] == 0 else -1
+                                for x in df[["content_id", "content_type_id"]].values]
+        df["content_rating"] = df["content_rating"].astype("int16")
+        df[f"{self.column}_rating"] = df[f"{self.column}_rating"].astype("int16")
+
+        return df
+
 class UserAnswerLevelEncoder(FeatureFactory):
     user_answer_dict_path = "../feature_engineering/user_answer_dict.pickle"
 
