@@ -179,7 +179,7 @@ def make_feature_factory_manager(split_num, model_id=None):
 
 for i in range(10):
     filelist = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-    targetlist = [i%10, i%10+1, i%10+2, i%10+3, i%10+4]
+    targetlist = [i%10, (i+1)%10, (i+2)%10, (i+3)%10, (i+4)%10]
 
     df = pd.concat(
         [pd.read_pickle(f"../input/riiid-test-answer-prediction/split10/train_{x}.pickle") for x in filelist])
@@ -221,11 +221,12 @@ for i in range(10):
     print(df.shape)
     df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
     print(model_id)
+    model_name = "_".join([str(x) for x in targetlist])
     train_lgbm_cv(df,
                   params=params,
                   output_dir=output_dir,
-                  model_id=model_id,
-                  exp_name=model_id,
+                  model_id=model_name,
+                  exp_name=model_name,
                   is_debug=is_debug,
                   drop_user_id=True)
 
