@@ -1595,7 +1595,7 @@ class QuestionLectureTableEncoder2(FeatureFactory):
 
     def __init__(self,
                  past_n: int,
-                 min_size: int=100,
+                 min_size: int=1000,
                  model_id: str = None,
                  load_feature: bool = None,
                  save_feature: bool = None,
@@ -2335,7 +2335,7 @@ class FirstNAnsweredCorrectly(FeatureFactory):
 
 
 class UserContentRateEncoder(FeatureFactory):
-    feature_name_base = "target_enc"
+    feature_name_base = "user_content_rate_encoder"
     dict_path = "../feature_engineering/content_user_rate_dict.pickle"
 
     def __init__(self,
@@ -2367,6 +2367,7 @@ class UserContentRateEncoder(FeatureFactory):
                 self.content_rate_dict = pickle.load(f)
         else:
             self.content_rate_dict = content_rate_dict
+        self.make_col_name = f"{self.feature_name_base}_{self.column}"
 
     def make_dict(self,
                   df: pd.DataFrame,
@@ -2481,6 +2482,7 @@ class UserContentRateEncoder(FeatureFactory):
 
         df["content_rating"] = df["content_rating"].astype("int16")
         df[f"{self.column}_rating"] = df[f"{self.column}_rating"].astype("int16")
+        df[f"rating_diff_content_{self.column}"] = df["content_rating"] - df[f"{self.column}_rating"]
         return df
 
     def partial_predict(self,
@@ -2498,6 +2500,7 @@ class UserContentRateEncoder(FeatureFactory):
                                 for x in df[["content_id", "content_type_id"]].values]
         df["content_rating"] = df["content_rating"].astype("int16")
         df[f"{self.column}_rating"] = df[f"{self.column}_rating"].astype("int16")
+        df[f"rating_diff_content_{self.column}"] = df["content_rating"] - df[f"{self.column}_rating"]
 
         return df
 
