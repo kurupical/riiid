@@ -319,8 +319,8 @@ class TagsSeparator(FeatureFactory):
 
     def __init__(self,
                  model_id: str = None,
-                 load_feature: bool = None,
-                 save_feature: bool = None,
+                 load_feature: bool = False,
+                 save_feature: bool = False,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
         self.load_feature = load_feature
@@ -338,11 +338,11 @@ class TagsSeparator(FeatureFactory):
 
     def make_feature(self,
                      df: pd.DataFrame):
-        return self._predict(df)
+        return df
 
     def _predict(self,
                  df: pd.DataFrame):
-        tag = df["tags"].str.split(" ", n=10, expand=True)
+        tag = df["tags"].str.split(" ", n=3, expand=True)
         tag.columns = [f"tags{i}" for i in range(1, len(tag.columns) + 1)]
 
         for col in ["tags1", "tags2"]:
