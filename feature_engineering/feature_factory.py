@@ -802,9 +802,21 @@ class MeanAggregator(FeatureFactory):
             df: pd.DataFrame,
             feature_factory_dict: Dict[Union[str, tuple],
                                        Dict[str, FeatureFactory]]):
-        group = df.groupby(self.column)
+
+        is_first_fit = len(df) > 2000
+        if is_first_fit:
+            self._fit(df,
+                      feature_factory_dict=feature_factory_dict)
+        return self
+
+    def _fit(self,
+             df: pd.DataFrame,
+             feature_factory_dict: Dict[Union[str, tuple],
+                                        Dict[str, FeatureFactory]]):
+        group = df[df[self.agg_column].notnull()].groupby(self.column)
         sum_dict = group[self.agg_column].sum().to_dict()
-        size_dict = group["is_question"].sum().to_dict()
+        size_dict = group.size().to_dict()
+
         for key in sum_dict.keys():
             sum_ = sum_dict[key]
             size_ = size_dict[key]
@@ -827,7 +839,10 @@ class MeanAggregator(FeatureFactory):
     def _all_predict_core(self,
                     df: pd.DataFrame):
         def f(series):
+            if self.remove_now:
             return (series.shift(1).fillna(0).cumsum()) / series.shift(1).notnull().cumsum()
+            else:
+                return (series.fillna(0).cumsum()) / series.notnull().cumsum()
 
         self.logger.info(f"{self.feature_name_base}_all_{self.column}_{self.agg_column}")
         df[self.make_col_name] = df.groupby(self.column)[self.agg_column].transform(f).astype("float32")
@@ -837,6 +852,8 @@ class MeanAggregator(FeatureFactory):
     def partial_predict(self,
                         df: pd.DataFrame,
                         is_update: bool=True):
+        self._fit(df,
+                  feature_factory_dict={})
         df = self._partial_predict2(df, column=self.make_col_name)
         df[self.make_col_name] = df[self.make_col_name].astype("float32")
         df[f"diff_{self.make_col_name}"] = (df[self.agg_column] - df[self.make_col_name]).astype("float32")
@@ -2552,12 +2569,15 @@ class UserContentRateEncoder(FeatureFactory):
     def partial_predict(self,
                         df: pd.DataFrame,
                         is_update: bool=True):
-        def f(user_id, content_type_id):
+        def f(user_id, content_id, content_type_id):
             if content_type_id == 1:
                 return -1
             if user_id in self.data_dict:
                 return self.data_dict[user_id]
             else:
+                if self.initial_rate is None:
+                    return self.content_rate_dict[content_id]
+                else:
                 return 1500
 
         if type(self.column) == str:
