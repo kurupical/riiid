@@ -2354,6 +2354,7 @@ class UserContentRateEncoder(FeatureFactory):
     def __init__(self,
                  rate_func: str,
                  column: Union[list, str],
+                 initial_rate: int = 1500,
                  content_rate_dict: dict = None,
                  model_id: str = None,
                  load_feature: bool = None,
@@ -2383,11 +2384,14 @@ class UserContentRateEncoder(FeatureFactory):
             self.rate_func = simple_diff
         if rate_func == "elo":
             self.rate_func = elo_rating
+        self.initial_rate = initial_rate
         self.load_feature = load_feature
         self.save_feature = save_feature
         self.model_id = model_id
+        self.content_rate_dict = content_rate_dict
         self.dict_path = f"../feature_engineering/content_{self.column}_{rate_func}_rate_dict.pickle"
-        if content_rate_dict is None:
+        self.make_col_name = f"{self.feature_name_base}_{self.column}_{rate_func}_rate_dict.pickle"
+        if self.content_rate_dict is None:
             if not os.path.isfile(self.dict_path):
                 print("make_new_dict")
                 files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
@@ -2395,15 +2399,28 @@ class UserContentRateEncoder(FeatureFactory):
                     columns = ["timestamp", "content_id", "content_type_id", "answered_correctly", self.column]
                 else:
                     columns = ["timestamp", "content_id", "content_type_id", "answered_correctly"] + self.column
-
+                columns = [x for x in columns if "tags" not in x]
+                if "tags" not in self.column:
                 df = pd.concat([pd.read_pickle(f)[columns] for f in files]).sort_values(["user_id", "timestamp"])
+                else:
+                    df = pd.concat([pd.read_pickle(f)[columns+["tags"]] for f in files]).sort_values(["user_id", "timestamp"])
+
+                    tag = df["tags"].str.split(" ", n=2, expand=True)
+                    tag.columns = [f"tags{i}" for i in range(1, len(tag.columns) + 1)]
+
+                    for col in ["tags1", "tags2"]:
+                        if col in tag.columns:
+                            df[col] = pd.to_numeric(tag[col], errors='coerce').fillna(-1).astype("int16")
+                        else:
+                            df[col] = -1
+                            df[col].astype("int16")
                 print("loaded")
                 self.make_dict(df)
+
             with open(self.dict_path, "rb") as f:
                 self.content_rate_dict = pickle.load(f)
         else:
-            self.content_rate_dict = content_rate_dict
-        self.make_col_name = f"{self.feature_name_base}_{self.column}_{rate_func}"
+            self.content_rate_dict = self.content_rate_dict
 
     def make_dict(self,
                   df: pd.DataFrame,
@@ -2425,10 +2442,11 @@ class UserContentRateEncoder(FeatureFactory):
             else:
                 user_keys = tuple(x[2:])
 
-            if user_keys not in user_dict:
-                user_dict[user_keys] = 1500
             if content_id not in content_dict:
                 content_dict[content_id] = 1500
+
+            if user_keys not in user_dict:
+                user_dict[user_keys] = 1500
 
             user_rate = user_dict[user_keys]
             content_rate = content_dict[content_id]
@@ -2454,7 +2472,10 @@ class UserContentRateEncoder(FeatureFactory):
                     answered_correctly: int):
 
         if user_key not in user_dict:
-            user_dict[user_key] = 1500
+            if self.initial_rate is None:
+                user_dict[user_key] = self.content_rate_dict[content_id]
+            else:
+                user_dict[user_key] = self.initial_rate
         user_rate = user_dict[user_key]
         content_rate = self.content_rate_dict[content_id]
 
@@ -2493,15 +2514,19 @@ class UserContentRateEncoder(FeatureFactory):
 
     def _all_predict_core(self,
                     df: pd.DataFrame):
-
+        self.logger.info(f"user_rating {self.column}")
         user_dict = {}
         def f(user_key, content_id, content_type_id, answered_correctly):
             if content_type_id == 1:
                 return -1
 
             if user_key not in user_dict:
-                user_dict[user_key] = 1500
-                ret = 1500
+                if self.initial_rate is None:
+                    rate = self.content_rate_dict[content_id]
+                else:
+                    rate = self.initial_rate
+                user_dict[user_key] = rate
+                ret = rate
             else:
                 ret = user_dict[user_key]
 
@@ -2540,7 +2565,7 @@ class UserContentRateEncoder(FeatureFactory):
         else:
             keys = [tuple(x) for x in df[self.column].values]
 
-        df[f"{self.column}_rating"] = [f(key, x) for key, x in zip(keys, df["content_type_id"].values)]
+        df[f"{self.column}_rating"] = [f(key, x[0], x[1]) for key, x in zip(keys, df[["content_id", "content_type_id"]].values)]
         df["content_rating"] = [self.content_rate_dict[x[0]] if x[1] == 0 else -1
                                 for x in df[["content_id", "content_type_id"]].values]
         df["content_rating"] = df["content_rating"].astype("int16")

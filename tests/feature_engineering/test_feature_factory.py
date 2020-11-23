@@ -1611,6 +1611,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
                            "answered_correctly": answered_correctly})
         encoder = UserContentRateEncoder(column="user_id",
                                          rate_func="simple",
+                                         initial_rate=1500,
                                          content_rate_dict={})
 
         encoder.make_dict(df, output_dir=pickle_dir)
@@ -1652,6 +1653,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
             "user_id": {
                 "UserContentRateEncoder": UserContentRateEncoder(column="user_id",
                                                                  rate_func="simple",
+                                                                 initial_rate=1500,
                                                                  content_rate_dict=content_rate_dict)
             }
         }
@@ -1746,6 +1748,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
                            "answered_correctly": answered_correctly})
         encoder = UserContentRateEncoder(column=["user_id", "part"],
                                          rate_func="simple",
+                                         initial_rate=1500,
                                          content_rate_dict={})
 
         encoder.make_dict(df, output_dir=pickle_dir)
@@ -1787,6 +1790,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
             "user_id": {
                 "UserContentRateEncoder": UserContentRateEncoder(column=["user_id", "part"],
                                                                  rate_func="simple",
+                                                                 initial_rate=1500,
                                                                  content_rate_dict=content_rate_dict)
             }
         }
