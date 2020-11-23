@@ -840,7 +840,7 @@ class MeanAggregator(FeatureFactory):
                     df: pd.DataFrame):
         def f(series):
             if self.remove_now:
-            return (series.shift(1).fillna(0).cumsum()) / series.shift(1).notnull().cumsum()
+                return (series.shift(1).fillna(0).cumsum()) / series.shift(1).notnull().cumsum()
             else:
                 return (series.fillna(0).cumsum()) / series.notnull().cumsum()
 
@@ -1831,6 +1831,10 @@ class QuestionLectureTableEncoder2(FeatureFactory):
 
         return df
 
+    def __repr__(self):
+        return self.__class__.__name__
+
+
 class QuestionQuestionTableEncoder(FeatureFactory):
     question_lecture_dict_path = "../feature_engineering/question_question_dict.pickle"
 
@@ -2039,6 +2043,9 @@ class QuestionQuestionTableEncoder(FeatureFactory):
         df["qq_table2_last"] = df["qq_table2_last"].astype("float32")
 
         return df
+
+    def __repr__(self):
+        return self.__class__.__name__
 
 
 class PreviousLecture(FeatureFactory):
@@ -2418,7 +2425,7 @@ class UserContentRateEncoder(FeatureFactory):
                     columns = ["timestamp", "content_id", "content_type_id", "answered_correctly"] + self.column
                 columns = [x for x in columns if "tags" not in x]
                 if "tags" not in self.column:
-                df = pd.concat([pd.read_pickle(f)[columns] for f in files]).sort_values(["user_id", "timestamp"])
+                    df = pd.concat([pd.read_pickle(f)[columns] for f in files]).sort_values(["user_id", "timestamp"])
                 else:
                     df = pd.concat([pd.read_pickle(f)[columns+["tags"]] for f in files]).sort_values(["user_id", "timestamp"])
 
@@ -2578,7 +2585,7 @@ class UserContentRateEncoder(FeatureFactory):
                 if self.initial_rate is None:
                     return self.content_rate_dict[content_id]
                 else:
-                return 1500
+                    return 1500
 
         if type(self.column) == str:
             keys = df[self.column].values
@@ -2766,6 +2773,8 @@ class UserAnswerLevelEncoder(FeatureFactory):
 
         return df
 
+    def __repr__(self):
+        return self.__class__.__name__
 
 class PreviousNAnsweredCorrectly(FeatureFactory):
     """
@@ -2961,6 +2970,54 @@ class WeightDecayTargetEncoder(FeatureFactory):
         df = self._partial_predict2(df, column=self.make_col_name)
         df[self.make_col_name] = df[self.make_col_name].astype("float32")
         return df
+
+
+class StudyTermEncoder(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = False,
+                 save_feature: bool = False,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.make_col_name = "study_time"
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return df
+
+    def _predict(self,
+                 df: pd.DataFrame):
+        df["study_time"] = df["shiftdiff_timestamp_by_user_id"] - df["prior_question_elapsed_time"]
+        df["study_time"] = [x if x < 200000 else -1 for x in df["study_time"].fillna(-99).values]
+        df["study_time"] = df["study_time"].replace(0, np.nan).fillna(method="ffill")
+        return df
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"tags_all")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
 
 
 class FeatureFactoryManager:

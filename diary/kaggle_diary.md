@@ -403,9 +403,87 @@
     * QLtable diff -> model1 CV: 0.7798(100epoch)-0.7805(200epoch)
     * QLtable normal -> model1 CV: 0.7832(100epoch)-0.7841(200epoch)
 * ex_084: もう一度, fitだけしてサブする
-* ex_090: ex_089を20Mrow(GCP)
+* ex_090: ex_089を20Mrow(GCP) -> CV: 0.7873(model0+1)
+* ex_091: ex_089 + 昔消した特徴たち
 
 ## other
 * 処理の並列化
   * https://qiita.com/uo_ta/items/8d265a0f03300ebc2635
+
+# 2020/11/18
+## EDA
+* 028_user_answer_and_content_id
+  * ![image_39](image_39.png)
+
+# 2020/11/19
+## other
+GCP上でアップロード: kaggle datasets version -p riiid_code/ --dir-mode "zip" -m "test"
+
+# 2020/11/20
+## experiment
+* ex_094: 50M rows
+
+# 2020/11/21
+## experiment
+* ex_089(finalize): CV. 0.7830(model0)
+* ex_095: ex_089 + qq_table CV: 0.7836
+  * 空欄が目立つ…もうちょいデータとっても良さそう
+  * ![image_40](image_40.png)
+* ex_096: ex_089 + useranswer_table CV: 0.7837
+* ex_097: ex_089 + weighted_te CV: 0.78366
+* ex_098: ex_089 + qq_table(min_size=500?) 元気があれば CV: 0.7836
+* ex_099: 全部のせ　CV: 0.7843(model0) -> CV: 0.7843
+
+# 2020/11/22
+## experiment
+* ex_100: ex_100 + user_content_rate -> CV: 0.7852 (+0.0009)
+* ex_101: ql_tableは条件厳し目(min_size=1000) -> CV: 0.7830(-0.002)
+* ex_102: lgbm update + ex_101
+* ex_103: re-think data validation(10% all new user, 90%: train9:val1) -> CV: 0.7822(-0.0008)
+* ex_104: ex_103 + Elo Rating -> CV: 0.7824(+0.0002)
+* ex_105: ex_104 + Elo Rating(user_id, part) -> CV: 0.7827(+0.0003)
+* ex_106: initial_rateを最初の問題にあわせる -> CV: 0.7825
+* ex_107: ex_105 + Elo Rating(user_id, tags) -> CV: 0.7832
+* ex_108: ex_107 - weightedte -> CV: 0.7833
+* ex_109: ex_108 - te : CV: 0.7829
+## EDA
+* 030_prior_question_user_count -> prior_question_had_explanationでtarget encodeするの、情報を圧縮してる。
+  * user_count_binでやるのが正しい
+  * [image_41](image_41.png)
+* 031_check_auc
+  * TOTAL: 0.7821
+  * user_count
+    * <30: 0.7629 (n=148399)
+    * >30: 0.7796 (n=1637174)
+  * part -> part2, part5の精度が悪いっぽい
+      * part=1, n=115860: auc=0.809
+      * part=2, n=356685: auc=0.7552
+      * part=3, n=150430: auc=0.8008
+      * part=4, n=137949: auc=0.8173
+      * part=5, n=775714: auc=0.76
+      * part=6, n=181319: auc=0.7977
+      * part=7, n=107240: auc=0.8192
+  * part2(3択)
+    * ![image_42](image_42.png)
+  * part5
+    * ![image_43](image_43.png)
+
+# 2020/11/23
+## Experiment
+* ex_111: user_answer/user_idを消す(重すぎる) -> CV: 0.7824
+* ex_112: part5 only -> 0.7605
+* ex_113: category(tags1, tags2, content_id) -> 0.7832
+* ex_114: ex_113 + user_id(本番では使えないけど) -> 0.7832
+* ex_115: tags6まで入れた -> 0.7832
+* ex_116: Counterを入れた(content_type_id, part) -> 0.7832(変わらず)
+* ex_117: (user_id, part).mean("prior_question_elapsed") -> 0.7833
+* ex_118: study_time -> 0.7850
+* ex_119: userlevelとかcontentlevelがバグってると思うので消す ->
+
+## EDA
+* 032_check_low_auc_tag\
+  * ![image_44](image_44.png)
+
+  * 分布見てみると、「もう予想できませーん」っていってるようなもん
+  * ![image_45](image_45.png)
 </div>
