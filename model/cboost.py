@@ -16,6 +16,7 @@ def train_catboost_cv(df: pd.DataFrame,
                       model_id: int,
                       exp_name: str,
                       drop_user_id: bool,
+                      cat_features: list=None,
                       experiment_id: int=6,
                       is_debug: bool=False):
 
@@ -39,13 +40,18 @@ def train_catboost_cv(df: pd.DataFrame,
     val_idx = []
     np.random.seed(0)
     for _, w_df in df.groupby("user_id"):
-        train_num = (np.random.random(len(w_df)) < 0.8).sum()
-        train_idx.extend(w_df[:train_num].index.tolist())
-        val_idx.extend(w_df[train_num:].index.tolist())
+        if np.random.random() < 0.1:
+            # all val
+            val_idx.extend(w_df.index.tolist())
+        else:
+            train_num = int(len(w_df) * 0.9)
+            train_idx.extend(w_df[:train_num].index.tolist())
+            val_idx.extend(w_df[train_num:].index.tolist())
 
     model = CatBoostClassifier(**params)
     model.fit(df.loc[train_idx][features],
               df.loc[train_idx]["answered_correctly"],
+              cat_features=cat_features,
               eval_set=(df.loc[val_idx][features], df.loc[val_idx]["answered_correctly"]))
 
     y_train = model.predict_proba(df.loc[train_idx][features])[:, 1]
