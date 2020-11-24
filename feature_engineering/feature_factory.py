@@ -1609,7 +1609,7 @@ class QuestionLectureTableEncoder(FeatureFactory):
         return df
 
 class QuestionLectureTableEncoder2(FeatureFactory):
-    question_lecture_dict_path = "../feature_engineering/question_lecture2_dict.pickle"
+    question_lecture_dict_path = "../feature_engineering/question_lecture2_dict_{}.pickle"
 
     def __init__(self,
                  past_n: int,
@@ -1629,17 +1629,17 @@ class QuestionLectureTableEncoder2(FeatureFactory):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
         self.is_debug = is_debug
-        self.make_col_name = self.__class__.__name__
+        self.make_col_name = f"{self.__class__.__name__}_th{self.min_size}"
         self.data_dict = {}
         if question_lecture_dict is None:
-            if not os.path.isfile(self.question_lecture_dict_path):
+            if not os.path.isfile(self.question_lecture_dict_path.format(self.min_size)):
                 print("make_new_dict")
                 files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
                 df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
                                     ["user_id", "content_id", "content_type_id", "answered_correctly"]] for f in files])
                 print("loaded")
                 self.make_dict(df)
-            with open(self.question_lecture_dict_path, "rb") as f:
+            with open(self.question_lecture_dict_path.format(self.min_size), "rb") as f:
                 self.question_lecture_dict = pickle.load(f)
         else:
             self.question_lecture_dict = question_lecture_dict
@@ -1837,7 +1837,7 @@ class QuestionLectureTableEncoder2(FeatureFactory):
 
 
 class QuestionQuestionTableEncoder(FeatureFactory):
-    question_lecture_dict_path = "../feature_engineering/question_question_dict.pickle"
+    question_lecture_dict_path = "../feature_engineering/question_question_dict_{}.pickle"
 
     def __init__(self,
                  past_n: int,
@@ -1857,17 +1857,17 @@ class QuestionQuestionTableEncoder(FeatureFactory):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
         self.is_debug = is_debug
-        self.make_col_name = self.__class__.__name__
+        self.make_col_name = f"{self.__class__.__name__}_th{self.min_size}"
         self.data_dict = {}
         if question_lecture_dict is None:
-            if not os.path.isfile(self.question_lecture_dict_path):
+            if not os.path.isfile(self.question_lecture_dict_path.format(self.min_size)):
                 print("make_new_dict")
                 files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")[:3]
                 df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
                                     ["user_id", "content_id", "content_type_id", "answered_correctly"]] for f in files])
                 print("loaded")
                 self.make_dict(df)
-            with open(self.question_lecture_dict_path, "rb") as f:
+            with open(self.question_lecture_dict_path.format(self.min_size), "rb") as f:
                 self.question_lecture_dict = pickle.load(f)
         else:
             self.question_lecture_dict = question_lecture_dict
@@ -1918,7 +1918,7 @@ class QuestionQuestionTableEncoder(FeatureFactory):
                     ret_dict[(lecture, question, lectured, past_answered)] = score
 
         if output_dir is None:
-            output_dir = self.question_lecture_dict_path
+            output_dir = self.question_lecture_dict_path.format(self.min_size)
         with open(output_dir, "wb") as f:
             pickle.dump(ret_dict, f)
 
