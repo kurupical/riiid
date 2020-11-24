@@ -24,7 +24,8 @@ from feature_engineering.feature_factory import \
     UserAnswerLevelEncoder, \
     QuestionQuestionTableEncoder, \
     WeightDecayTargetEncoder, \
-    UserContentRateEncoder
+    UserContentRateEncoder, \
+    Word2VecEncoder
 from experiment.common import get_logger
 import pickle
 import os
@@ -1855,6 +1856,133 @@ class PartialAggregatorTestCase(unittest.TestCase):
         })
 
         df_expect = df_expect.fillna(-1).astype("int16")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+
+    def test_w2v(self):
+        logger = get_logger()
+
+        # (lecture, question, is_lectured, past_answered)
+        w2v_dict = {
+            "1_0": [0.01, 0.02],
+            "1_1": [0.04, 0.08],
+            "2_0": [0.16, 0.32],
+            "3_0": [0.64, 1.28]
+        }
+        window = 3
+        size = 2
+        columns = ["content_id", "content_type_id"]
+
+        feature_factory_dict = {
+            "user_id": {
+                "Word2VecEncoder": Word2VecEncoder(columns=columns,
+                                                   window=window,
+                                                   size=size,
+                                                   w2v_dict=w2v_dict)
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        user1_content_id = [1, 1, 2, 4, 3]
+        user1_content_type_id = [0, 1, 0, 0, 0]
+        user1_answered_correctly = [0, 0, 0, 0, 0]
+
+        user2_content_id = [1, 2]
+        user2_content_type_id = [0, 0]
+        user2_answered_correctly = [0, 0]
+
+        user_id = [1]*5 + [2]*2
+        content_id = user1_content_id + user2_content_id
+        content_type_id = user1_content_type_id + user2_content_type_id
+        answered_correctly = user1_answered_correctly + user2_answered_correctly
+        df = pd.DataFrame({"user_id": user_id,
+                           "content_id": content_id,
+                           "content_type_id": content_type_id,
+                           "answered_correctly": answered_correctly})
+
+        user1_w2v_dim0 = np.array([0.01, 0.04, 0.16, np.nan, 0.64])
+        user1_w2v_dim1 = np.array([0.02, 0.08, 0.32, np.nan, 1.28])
+
+        user2_w2v_dim0 = np.array([0.01, 0.16])
+        user2_w2v_dim1 = np.array([0.02, 0.32])
+
+        def get_max_min_mean(x):
+            start_idxs = [x-window if x-window > 0 else 0 for x in range(len(x))]
+            end_idxs = [x+1 for x in range(len(x))]
+            max_ary = [x[start_idx:end_idx].max() for start_idx, end_idx in zip(start_idxs, end_idxs)]
+            min_ary = [x[start_idx:end_idx].min() for start_idx, end_idx in zip(start_idxs, end_idxs)]
+            mean_ary = [x[start_idx:end_idx].mean() for start_idx, end_idx in zip(start_idxs, end_idxs)]
+            return max_ary, min_ary, mean_ary
+
+        user1_max_dim0, user1_min_dim0, user1_mean_dim0 = get_max_min_mean(user1_w2v_dim0)
+        user1_max_dim1, user1_min_dim1, user1_mean_dim1 = get_max_min_mean(user1_w2v_dim1)
+
+        user2_max_dim0, user2_min_dim0, user2_mean_dim0 = get_max_min_mean(user2_w2v_dim0)
+        user2_max_dim1, user2_min_dim1, user2_mean_dim1 = get_max_min_mean(user2_w2v_dim1)
+
+        col_name = f"w2v_{columns}_window{window}_size{size}"
+        df_expect = pd.DataFrame({
+            f"{col_name}_dim0": user1_w2v_dim0.tolist() + user2_w2v_dim0.tolist(),
+            f"{col_name}_dim1": user1_w2v_dim1.tolist() + user2_w2v_dim1.tolist(),
+            f"swem_max_{col_name}_dim0": user1_max_dim0 + user2_max_dim0,
+            f"swem_max_{col_name}_dim1": user1_max_dim1 + user2_max_dim1,
+            f"swem_min_{col_name}_dim0": user1_min_dim0 + user2_min_dim0,
+            f"swem_min_{col_name}_dim1": user1_min_dim1 + user2_min_dim1,
+            f"swem_mean_{col_name}_dim0": user1_mean_dim0 + user2_mean_dim0,
+            f"swem_mean_{col_name}_dim1": user1_mean_dim1 + user2_mean_dim1,
+        })
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        df = pd.DataFrame({"user_id": [1, 1, 2, 3],
+                           "content_id": [1, 2, 1, 2],
+                           "content_type_id": [0, 0, 0, 0]})
+
+        w2v_dim0 = [0.01, 0.16, 0.01, 0.16]
+        w2v_dim1 = [0.02, 0.32, 0.02, 0.32]
+
+        w2v_ary_dim0 = [
+            [np.nan, 0.64, 0.01],
+            [np.nan, 0.64, 0.01],
+            [0.01, 0.16, 0.01],
+            [0.16]
+        ]
+        w2v_ary_dim1 = [
+            [np.nan, 1.28, 0.02],
+            [np.nan, 1.28, 0.02],
+            [0.02, 0.32, 0.02],
+            [0.32]
+        ]
+
+        max_dim0 = [np.array(x).max() for x in w2v_ary_dim0]
+        min_dim0 = [np.array(x).min() for x in w2v_ary_dim0]
+        mean_dim0 = [np.array(x).mean() for x in w2v_ary_dim0]
+
+        max_dim1 = [np.array(x).max() for x in w2v_ary_dim1]
+        min_dim1 = [np.array(x).min() for x in w2v_ary_dim1]
+        mean_dim1 = [np.array(x).mean() for x in w2v_ary_dim1]
+
+        df_expect = pd.DataFrame({
+            f"{col_name}_dim0": w2v_dim0,
+            f"{col_name}_dim1": w2v_dim1,
+            f"swem_max_{col_name}_dim0": max_dim0,
+            f"swem_max_{col_name}_dim1": max_dim1,
+            f"swem_min_{col_name}_dim0": min_dim0,
+            f"swem_min_{col_name}_dim1": min_dim1,
+            f"swem_mean_{col_name}_dim0": mean_dim0,
+            f"swem_mean_{col_name}_dim1": mean_dim1,
+        })
+
+        df_expect = df_expect.astype("float32")
         df_actual = agger.partial_predict(df)
 
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])

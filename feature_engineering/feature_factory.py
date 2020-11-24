@@ -8,6 +8,7 @@ import pickle
 import os
 import glob
 import random
+from gensim.models import word2vec
 from multiprocessing import Pool, cpu_count
 
 tqdm.tqdm.pandas()
@@ -3018,6 +3019,170 @@ class StudyTermEncoder(FeatureFactory):
 
     def __repr__(self):
         return f"{self.__class__.__name__}"
+
+
+class Word2VecEncoder(FeatureFactory):
+
+    def __init__(self,
+                 columns: List[str],
+                 window: int,
+                 size: int,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 w2v_dict: Union[Dict[str, list], None] = None,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
+        self.columns = columns
+        self.window = window
+        self.size = size
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.data_dict = {}
+        self.dict_path = f"../feature_engineering/w2v_{columns}_window{window}_size{size}.pickle"
+        self.make_col_name = f"w2v_{columns}_window{window}_size{size}"
+        if w2v_dict is None:
+            if not os.path.isfile(self.dict_path):
+                print("make_new_dict")
+                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
+                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[["user_id"] + self.columns] for f in files])
+                print("loaded")
+                self.make_dict(df)
+            with open(self.dict_path, "rb") as f:
+                self.w2v_dict = pickle.load(f)
+        else:
+            self.w2v_dict = w2v_dict
+
+    def make_dict(self,
+                  df: pd.DataFrame,
+                  output_dir: str = None):
+        """
+        question_lecture_dictを作って, 所定の場所に保存する
+        :param df:
+        :param is_output:
+        :return:
+        """
+
+        df["key"] = ["_".join(x.tolist()) for x in df[self.columns]]
+        histories = df.groupby("user_id").agg({"key": list})
+        w2v = word2vec.Word2Vec(histories.values.flatten().tolist(), size=10, window=50)
+        ret_dict = {k: w2v[k].tolist() for k in w2v.wv.index2word}
+        if output_dir is None:
+            output_dir = self.dict_path
+        with open(output_dir, "wb") as f:
+            pickle.dump(ret_dict, f)
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        df["key"] = ["_".join(x.tolist()) for x in df[self.columns].astype(str).values]
+        list_dict = df.groupby("user_id").agg({"key": list}).to_dict()["key"]
+        for user_id, list_key in list_dict.items():
+            if user_id not in self.data_dict:
+                self.data_dict[user_id] = list_key[-self.window:]
+            else:
+                self.data_dict[user_id] = (self.data_dict[user_id] + list_key)[-self.window:]
+        return self
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+
+        self.logger.info(f"useranswer")
+        def f(w_df):
+            def make_lecture_list(series):
+                ret = []
+                w_ret = []
+                for x in series.values:
+                    w_ret.append(x)
+                    ret.append(w_ret[-self.window:])
+                return ret
+
+            def calc_score(x):
+                score = []
+                for key in x:
+                    if key in self.w2v_dict:
+                        score.append(self.w2v_dict[key])
+                    else:
+                        score.append([np.nan]*self.size)
+                return score[-self.window:]
+            w_df["list_keys"] = w_df.groupby("user_id")["key"].transform(make_lecture_list)
+
+            score = np.array([calc_score(x) for x in w_df["list_keys"].values])
+            return np.array(score)
+
+        self.logger.info(f"content_ua_score_encoding")
+
+        df["key"] = ["_".join(x.tolist()) for x in df[self.columns].astype(str).values]
+        df_rets = []
+        for key, w_df in tqdm.tqdm(df.groupby("user_id")):
+            score = f(w_df)
+            df_ret = pd.DataFrame(index=w_df.index)
+            expect_mean = np.array([np.array(x).mean(axis=0) if len(x) > 0 else np.nan for x in score])
+            expect_max = np.array([np.array(x).max(axis=0) if len(x) > 0 else np.nan for x in score])
+            expect_min = np.array([np.array(x).min(axis=0) if len(x) > 0 else np.nan for x in score])
+            expect_last = np.array([x[-1] if len(x) > 0 else np.nan for x in score])
+            for i in range(self.size):
+                df_ret[f"swem_max_{self.make_col_name}_dim{i}"] = expect_max[:, i]
+                df_ret[f"swem_min_{self.make_col_name}_dim{i}"] = expect_min[:, i]
+                df_ret[f"swem_mean_{self.make_col_name}_dim{i}"] = expect_mean[:, i]
+                df_ret[f"{self.make_col_name}_dim{i}"] = expect_last[:, i]
+
+            df_rets.append(df_ret)
+
+        df_rets = pd.concat(df_rets).sort_index()
+
+        for col in df_rets.columns:
+            df[col] = df_rets[col].astype("float32")
+        df = df.drop("key", axis=1)
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        def calc_score(x):
+            user_id = x[0]
+            wv_key = x[1]
+
+            score = []
+            keys = []
+            if user_id in self.data_dict:
+                keys.extend(self.data_dict[user_id])
+            keys.append(wv_key)
+            for key in keys:
+                if key in self.w2v_dict:
+                    score.append(self.w2v_dict[key])
+                else:
+                    score.append([np.nan]*self.size)
+            return np.array(score[-self.window:])
+
+        df["key"] = ["_".join(x.tolist()) for x in df[self.columns].astype(str).values]
+        score = [calc_score(x) for x in df[["user_id", "key"]].values]
+        expect_mean = np.array([np.array(x).mean(axis=0) if len(x) > 0 else np.nan for x in score])
+        expect_max = np.array([np.array(x).max(axis=0) if len(x) > 0 else np.nan for x in score])
+        expect_min = np.array([np.array(x).min(axis=0) if len(x) > 0 else np.nan for x in score])
+        expect_last = np.array([x[-1] if len(x) > 0 else np.nan for x in score])
+        for i in range(self.size):
+            df[f"swem_max_{self.make_col_name}_dim{i}"] = expect_max[:, i]
+            df[f"swem_min_{self.make_col_name}_dim{i}"] = expect_min[:, i]
+            df[f"swem_mean_{self.make_col_name}_dim{i}"] = expect_mean[:, i]
+            df[f"{self.make_col_name}_dim{i}"] = expect_last[:, i]
+
+            df[f"swem_max_{self.make_col_name}_dim{i}"] = df[f"swem_max_{self.make_col_name}_dim{i}"].astype("float32")
+            df[f"swem_min_{self.make_col_name}_dim{i}"] = df[f"swem_min_{self.make_col_name}_dim{i}"].astype("float32")
+            df[f"swem_mean_{self.make_col_name}_dim{i}"] = df[f"swem_mean_{self.make_col_name}_dim{i}"].astype("float32")
+            df[f"{self.make_col_name}_dim{i}"] = df[f"{self.make_col_name}_dim{i}"].astype("float32")
+
+        return df
+
+    def __repr__(self):
+        return self.__class__.__name__
+
 
 
 class FeatureFactoryManager:
