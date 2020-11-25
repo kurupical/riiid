@@ -1465,7 +1465,8 @@ class ShiftDiffEncoder(FeatureFactory):
     def _all_predict_core(self,
                     df: pd.DataFrame):
         df[self.make_col_name] = df[self.column] - df.groupby(self.groupby)[self.column].shift(1)
-        df[self.make_col_name] = df[self.make_col_name].fillna(0).astype("int64")
+        df[self.make_col_name] = df[self.make_col_name].replace(0, np.nan)
+        df[self.make_col_name] = df.groupby(self.groupby)[self.make_col_name].fillna(method="ffill").fillna(0).astype("int64")
         return df
 
     def partial_predict(self,
@@ -1492,7 +1493,8 @@ class ShiftDiffEncoder(FeatureFactory):
 
         w_diff = df.groupby(self.groupby)[self.column].shift(1)
         w_diff = [x if not np.isnan(x) else f(idx) for idx, x in enumerate(w_diff.values)]
-        df[self.make_col_name] = (df[self.column] - w_diff).astype("int64")
+        df[self.make_col_name] = (df[self.column] - w_diff).replace(0, np.nan)
+        df[self.make_col_name] = df.groupby(self.groupby)[self.make_col_name].fillna(method="ffill").fillna(0).astype("int64")
 
         if is_update:
             for key, value in df.groupby(self.groupby)[self.column].last().to_dict().items():
@@ -3048,7 +3050,6 @@ class StudyTermEncoder(FeatureFactory):
                  df: pd.DataFrame):
         df["study_time"] = df["shiftdiff_timestamp_by_user_id"] - df["prior_question_elapsed_time"]
         df["study_time"] = [x if x < 200000 else -1 for x in df["study_time"].fillna(-99).values]
-        df["study_time"] = df["study_time"].replace(0, np.nan).fillna(method="ffill")
         return df
 
     def _all_predict_core(self,
