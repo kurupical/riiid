@@ -25,7 +25,8 @@ from feature_engineering.feature_factory import \
     QuestionQuestionTableEncoder, \
     WeightDecayTargetEncoder, \
     UserContentRateEncoder, \
-    Word2VecEncoder
+    Word2VecEncoder, \
+    ElapsedTimeVsShiftDiffEncoder
 from experiment.common import get_logger
 import pickle
 import os
@@ -1986,6 +1987,35 @@ class PartialAggregatorTestCase(unittest.TestCase):
         df_actual = agger.partial_predict(df)
 
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+    def test_elapsed_time_create_dict(self):
+        pickle_dir = "./test_dict.pickle"
+        if os.path.isdir(pickle_dir):
+            os.remove(pickle_dir)
+
+        # prepare test data
+        user_id = [1, 1, 2, 2, 1, 1]
+        content_id = [1, 2, 1, 2, 1, 2]
+        elapsed_time = [np.nan, 2, np.nan, 4, 8, 16]
+
+        df = pd.DataFrame({"user_id": user_id,
+                           "content_id": content_id,
+                           "prior_question_elapsed_time": elapsed_time})
+        encoder = ElapsedTimeVsShiftDiffEncoder(elapsed_time_dict={})
+
+        encoder.make_dict(df, output_dir=pickle_dir)
+
+        elapsed_time_dict = {
+            1: (2+8+16)/3,
+            2: 4
+        }
+
+        with open(pickle_dir, "rb") as f:
+            actual = pickle.load(f)
+
+        self.assertEqual(elapsed_time_dict, actual)
+        os.remove(pickle_dir)
+
 
 
 if __name__ == "__main__":

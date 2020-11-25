@@ -3021,6 +3021,80 @@ class StudyTermEncoder(FeatureFactory):
         return f"{self.__class__.__name__}"
 
 
+class ElapsedTimeVsShiftDiffEncoder(FeatureFactory):
+
+    def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 elapsed_time_dict: Union[Dict[str, list], None] = None,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.data_dict = {}
+        self.dict_path = f"../feature_engineering/elapsedtime.pickle"
+        self.make_col_name = f"shiftdiff_elapsedtime"
+        if elapsed_time_dict is None:
+            if not os.path.isfile(self.dict_path):
+                print("make_new_dict")
+                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
+                cols = ["user_id", "content_id", "prior_question_elapsed_time"]
+                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[cols] for f in files])
+                print("loaded")
+                self.make_dict(df)
+            with open(self.dict_path, "rb") as f:
+                self.elapsed_time_dict = pickle.load(f)
+        else:
+            self.elapsed_time_dict = elapsed_time_dict
+
+    def make_dict(self,
+                  df: pd.DataFrame,
+                  output_dir: str = None):
+        """
+        question_lecture_dictを作って, 所定の場所に保存する
+        :param df:
+        :param is_output:
+        :return:
+        """
+
+        df["elapsed_time"] = df.groupby("user_id")["prior_question_elapsed_time"].shift(-1)
+
+        ret_dict = df.groupby("user_id")["elapsed_time"].mean().to_dict()
+        if output_dir is None:
+            output_dir = self.dict_path
+        with open(output_dir, "wb") as f:
+            pickle.dump(ret_dict, f)
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        return self
+
+    def _predict(self,
+                 df: pd.DataFrame):
+        df["elapsed_time_content_id"] = [self.elapsed_time_dict[x] for x in df["content_id"].values]
+        df["diff_shiftdiff_elapsed_time"] = df["shiftdiff_timestamp_by_user_id"] - df["elapsed_time_content_id"]
+        return df
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+
+        self.logger.info(f"elapsed_time")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        return self._predict(df)
+
 class Word2VecEncoder(FeatureFactory):
 
     def __init__(self,
