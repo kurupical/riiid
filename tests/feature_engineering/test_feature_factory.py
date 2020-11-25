@@ -390,9 +390,9 @@ class PartialAggregatorTestCase(unittest.TestCase):
         nunique
         :return:
         """
-        df = pd.DataFrame({"key1": ["a", "a", "b", "b"],
-                           "val": [1, 2, 4, 8],
-                           "answered_correctly": [0, 0, 0, 0]})
+        df = pd.DataFrame({"key1": ["a", "a", "b", "b", "b"],
+                           "val": [1, 2, 4, 8, 8],
+                           "answered_correctly": [0, 0, 0, 0, 0]})
         logger = get_logger()
         feature_factory_dict = {
             "key1": {
@@ -402,9 +402,9 @@ class PartialAggregatorTestCase(unittest.TestCase):
         agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
                                       logger=logger)
         # predict_all
-        df_expect = pd.DataFrame({"key1": ["a", "a", "b", "b"],
-                                  "val": [1, 2, 4, 8],
-                                  "shiftdiff_val_by_key1": [0, 1, 0, 4]})
+        df_expect = pd.DataFrame({"key1": ["a", "a", "b", "b", "b"],
+                                  "val": [1, 2, 4, 8, 8],
+                                  "shiftdiff_val_by_key1": [0, 1, 0, 4, 4]})
         df_expect["shiftdiff_val_by_key1"] = df_expect["shiftdiff_val_by_key1"].astype("int64")
         df_actual = agger.all_predict(df)
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
@@ -423,11 +423,11 @@ class PartialAggregatorTestCase(unittest.TestCase):
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
         # partial predict 2 (リアルタイムfitができていることを確認)
-        df = pd.DataFrame({"key1": ["a", "a"],
-                           "val": [32, 64]})
-        df_expect = pd.DataFrame({"key1": ["a", "a"],
-                                  "val": [32, 64],
-                                  "shiftdiff_val_by_key1": [24, 32]})
+        df = pd.DataFrame({"key1": ["a", "a", "a"],
+                           "val": [32, 64, 64]})
+        df_expect = pd.DataFrame({"key1": ["a", "a", "a"],
+                                  "val": [32, 64, 64],
+                                  "shiftdiff_val_by_key1": [24, 32, 32]}) # valが前の値と同じなら、shiftdiffも前の値と同じ
         df_actual = agger.partial_predict(df)
 
         pd.testing.assert_frame_equal(df_expect, df_actual)
