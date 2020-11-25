@@ -2006,8 +2006,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
         encoder.make_dict(df, output_dir=pickle_dir)
 
         elapsed_time_dict = {
-            1: (2+8+16)/3,
-            2: 4
+            1: (2+4+16)/3,
+            2: 8
         }
 
         with open(pickle_dir, "rb") as f:

@@ -3065,7 +3065,7 @@ class ElapsedTimeVsShiftDiffEncoder(FeatureFactory):
 
         df["elapsed_time"] = df.groupby("user_id")["prior_question_elapsed_time"].shift(-1)
 
-        ret_dict = df.groupby("user_id")["elapsed_time"].mean().to_dict()
+        ret_dict = df.groupby("content_id")["elapsed_time"].mean().to_dict()
         if output_dir is None:
             output_dir = self.dict_path
         with open(output_dir, "wb") as f:
