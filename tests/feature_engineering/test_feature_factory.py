@@ -27,7 +27,8 @@ from feature_engineering.feature_factory import \
     UserContentRateEncoder, \
     Word2VecEncoder, \
     ElapsedTimeVsShiftDiffEncoder, \
-    QuestionQuestionTableEncoder2
+    QuestionQuestionTableEncoder2, \
+    TagsTargetEncoder
 from experiment.common import get_logger
 import pickle
 import os
@@ -2166,6 +2167,121 @@ class PartialAggregatorTestCase(unittest.TestCase):
         df_actual = agger.partial_predict(df)
 
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+
+    def test_tags_target_encoder_create_dict(self):
+
+        tags = ["1 2 3",
+                "1 2 4",
+                "2 3 4",
+                "5",
+                np.nan,
+                "2 5"]
+        ans = [1, 0, 1, 0, np.nan, 0]
+        df = pd.DataFrame({"tags": tags,
+                           "answered_correctly": ans})
+        pickle_dir = "./test_dict.pickle"
+        if os.path.isdir(pickle_dir):
+            os.remove(pickle_dir)
+
+        # key: (lecture_id, question_id, past_answered, answered_correctly)
+        expect = {
+            "1": (ans[0] + ans[1])/2,
+            "2": (ans[0] + ans[1] + ans[2] + ans[5])/4,
+            "3": ans[2],
+            "4": (ans[1] + ans[2])/2,
+            "5": (ans[3] + ans[5])/2
+        }
+        encoder = TagsTargetEncoder(tags_dict={})
+
+        encoder.make_dict(df, output_dir=pickle_dir)
+        with open(pickle_dir, "rb") as f:
+            actual = pickle.load(f)
+
+        self.assertEqual(expect, actual)
+        os.remove(pickle_dir)
+
+
+    def test_tags_target_encoder(self):
+        logger = get_logger()
+
+        # key: (lecture_id, question_id, past_answered, answered_correctly)
+        tags_dict = {
+            "1": 0.01,
+            "2": 0.02,
+            "3": 0.04
+        }
+
+        feature_factory_dict = {
+            "user_id": {
+                "TagsTargetEncoder": TagsTargetEncoder(tags_dict=tags_dict)
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        tags = ["1",
+                "1 2",
+                np.nan,
+                "1 2 3"]
+        ans = [0, 0, np.nan, 0]
+        df = pd.DataFrame({"tags": tags,
+                           "answered_correctly": ans})
+
+        score = [
+            [0.01],
+            [0.01, 0.02],
+            [],
+            [0.01, 0.02, 0.04]
+        ]
+        expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
+        expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
+        expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
+
+        df_expect = pd.DataFrame({
+            "tags_te_mean": expect_mean,
+            "tags_te_max": expect_max,
+            "tags_te_min": expect_min,
+        })
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.all_predict(df)
+
+        print(df_expect)
+        print(df_actual)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        agger.fit(df)
+
+        tags = ["1",
+                "1 2",
+                np.nan,
+                "1 2 3"]
+        ans = [0, 0, np.nan, 0]
+        df = pd.DataFrame({"tags": tags,
+                           "answered_correctly": ans})
+        score = [
+            [0.01],
+            [0.01, 0.02],
+            [],
+            [0.01, 0.02, 0.04]
+        ]
+        expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
+        expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
+        expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
+
+        df_expect = pd.DataFrame({
+            "tags_te_mean": expect_mean,
+            "tags_te_max": expect_max,
+            "tags_te_min": expect_min,
+        })
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
 
 
 

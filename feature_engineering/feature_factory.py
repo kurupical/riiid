@@ -421,6 +421,99 @@ class TagsSeparator2(FeatureFactory):
     def __repr__(self):
         return f"{self.__class__.__name__}"
 
+
+class TagsTargetEncoder(FeatureFactory):
+    tags_dict_path = "../feature_engineering/tags_dict.pickle"
+
+    def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 tags_dict: Union[Dict[str, float], None] = None,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
+        if tags_dict is None:
+            if not os.path.isfile(self.tags_dict_path):
+                print("make_new_dict")
+                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
+                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
+                                    ["tags", "answered_correctly"]] for f in files])
+                self.make_dict(df)
+            with open(self.tags_dict_path, "rb") as f:
+                self.tags_dict_path = pickle.load(f)
+        else:
+            self.tags_dict = tags_dict
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.make_col_name = self.__class__.__name__
+        self.data_dict = {}
+
+    def make_dict(self,
+                  df: pd.DataFrame,
+                  output_dir: str = None):
+        """
+        question_lecture_dictを作って, 所定の場所に保存する
+        :param df:
+        :param is_output:
+        :return:
+        """
+
+        ret_dict = {}
+
+        df = df[df["tags"].notnull()]
+        df["tags_list"] = [x.split(" ") if type(x) == str else [] for x in df["tags"].values]
+
+        for tag in np.arange(256):
+            df["is_target"] = [str(tag) in x for x in df["tags_list"].values]
+            w_df = df[df["is_target"]]
+            if len(w_df) > 0:
+                ret_dict[str(tag)] = w_df["answered_correctly"].mean()
+
+        if output_dir is None:
+            output_dir = self.tags_dict_path
+        with open(output_dir, "wb") as f:
+            pickle.dump(ret_dict, f)
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+        return self
+
+    def _predict(self,
+                 df: pd.DataFrame):
+        def f(ary):
+            return [self.tags_dict[x] for x in ary]
+        df["tags_te_list"] = [f(x.split(" ")) if type(x) == str else [np.nan] for x in df["tags"].values]
+        df["tags_te_mean"] = [np.array(x).mean() for x in df["tags_te_list"].values]
+        df["tags_te_max"] = [np.array(x).max() for x in df["tags_te_list"].values]
+        df["tags_te_min"] = [np.array(x).min() for x in df["tags_te_list"].values]
+
+        df["tags_te_mean"] = df["tags_te_mean"].astype("float32")
+        df["tags_te_max"] = df["tags_te_max"].astype("float32")
+        df["tags_te_min"] = df["tags_te_min"].astype("float32")
+
+        return df.drop("tags_te_list", axis=1)
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"tags_encoder_all")
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+
 class PartSeparator(FeatureFactory):
     feature_name_base = ""
 
