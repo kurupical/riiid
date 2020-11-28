@@ -3629,6 +3629,110 @@ class Word2VecEncoder(FeatureFactory):
     def __repr__(self):
         return self.__class__.__name__
 
+class PastNFeatureEncoder(FeatureFactory):
+    question_lecture_dict_path = "../feature_engineering/question_question_dict_{}.pickle"
+
+    def __init__(self,
+                 column: str,
+                 past_ns: List[int],
+                 remove_now: bool,
+                 agg_funcs: List[str],
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
+        self.column = column
+        self.past_ns = past_ns
+        self.remove_now = remove_now
+        self.agg_funcs = agg_funcs
+        self.past_n = np.array(past_ns).max()
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.make_col_name = f"{self.__class__.__name__}_{column}_{past_ns}"
+        self.data_dict = {}
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]]):
+
+        group = df[df[self.column].notnull()].groupby("user_id")
+        for user_id, w_df in group:
+            if user_id not in self.data_dict:
+                self.data_dict[user_id] = w_df[self.column].values.tolist()[-self.past_n:]
+            else:
+                self.data_dict[user_id] = (self.data_dict[self.column] + w_df[self.column].values.tolist())[-self.past_n:]
+        return self
+
+    def make_lecture_list(self, series):
+        ret = []
+        w_ret = []
+        for x in series.values:
+            if not np.isnan(x):
+                w_ret.append(x)
+            ret.append(w_ret[:])
+        return ret
+
+    def _make_feature(self, df, values):
+        for past_n in self.past_ns:
+            for agg_func in self.agg_funcs:
+                if agg_func == "min":
+                    df[f"past{past_n}_{self.column}_min"] = [np.array(x[-past_n:]).min() if len(x) > 0 else np.nan for x in values]
+                    df[f"past{past_n}_{self.column}_min"] = df[f"past{past_n}_value_min"].astype("float32")
+                if agg_func == "max":
+                    df[f"past{past_n}_{self.column}_max"] = [np.array(x[-past_n:]).max() if len(x) > 0 else np.nan for x in values]
+                    df[f"past{past_n}_{self.column}_max"] = df[f"past{past_n}_value_max"].astype("float32")
+                if agg_func == "mean":
+                    df[f"past{past_n}_{self.column}_mean"] = [np.array(x[-past_n:]).mean() if len(x) > 0 else np.nan for x in values]
+                    df[f"past{past_n}_{self.column}_mean"] = df[f"past{past_n}_value_mean"].astype("float32")
+
+        return df
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"past_n_feature")
+
+        values = df.groupby("user_id")[self.column].progress_transform(self.make_lecture_list).values
+        return self._make_feature(df, values)
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        """
+        リアルタイムfit
+        :param df:
+        :return:
+        """
+
+        def f(user_id, value):
+            """
+            user_idをしらべdataを返す、ついでに辞書もupdateする!
+            :param user_id:
+            :param value:
+            :return:
+            """
+            if user_id in self.data_dict:
+                ret = self.data_dict[user_id] + [value]
+            else:
+                ret = [value]
+            if is_update:
+                self.data_dict[user_id] = ret
+            return ret
+
+        values = [f(x[0], x[1]) for x in df[["user_id", self.column]].values]
+
+        return self._make_feature(df, values)
+
+    def __repr__(self):
+        return self.__class__.__name__
+
+
 
 
 class FeatureFactoryManager:

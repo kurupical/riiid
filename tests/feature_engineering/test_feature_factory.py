@@ -28,7 +28,8 @@ from feature_engineering.feature_factory import \
     Word2VecEncoder, \
     ElapsedTimeVsShiftDiffEncoder, \
     QuestionQuestionTableEncoder2, \
-    TagsTargetEncoder
+    TagsTargetEncoder, \
+    PastNFeatureEncoder
 from experiment.common import get_logger
 import pickle
 import os
@@ -2276,6 +2277,75 @@ class PartialAggregatorTestCase(unittest.TestCase):
             "tags_te_max": expect_max,
             "tags_te_min": expect_min,
         })
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+
+
+    def test_past_n_feature_encoder(self):
+        logger = get_logger()
+
+        feature_factory_dict = {
+            "user_id": {
+                "PastNFetureEncoder": PastNFeatureEncoder(past_ns=[2, 5],
+                                                          column="value",
+                                                          remove_now=False,
+                                                          agg_funcs=["max", "min", "mean"])
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        user1_value = [10, 20, 30, 40, 50]
+        user2_value = [10, np.nan, 20]
+        df = pd.DataFrame({"user_id": [1]*5 + [2]*3,
+                           "value": user1_value + user2_value,
+                           "answered_correctly": [0]*8})
+        user1_ary = [
+            [10],
+            [10, 20],
+            [10, 20, 30],
+            [10, 20, 30, 40],
+            [10, 20, 30, 40, 50]
+        ]
+        user2_ary = [
+            [10],
+            [10],
+            [10, 20]
+        ]
+
+        data_dict = {}
+        score = user1_ary + user2_ary
+        for past_n in [2, 5]:
+            data_dict[f"past{past_n}_value_mean"] = [np.array(x[-past_n:]).mean() if len(x) > 0 else np.nan for x in score]
+            data_dict[f"past{past_n}_value_max"] = [np.array(x[-past_n:]).max() if len(x) > 0 else np.nan for x in score]
+            data_dict[f"past{past_n}_value_min"] = [np.array(x[-past_n:]).min() if len(x) > 0 else np.nan for x in score]
+
+        df_expect = pd.DataFrame(data_dict)
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        agger.fit(df)
+
+        df = pd.DataFrame({"user_id": [1, 1, 3],
+                           "value": [60, 70, 10]})
+        score = [
+            [10, 20, 30, 40, 50, 60],
+            [10, 20, 30, 40, 50, 60, 70],
+            [10]
+        ]
+        for past_n in [2, 5]:
+            data_dict[f"past{past_n}_value_mean"] = [np.array(x[-past_n:]).mean() if len(x) > 0 else np.nan for x in score]
+            data_dict[f"past{past_n}_value_max"] = [np.array(x[-past_n:]).max() if len(x) > 0 else np.nan for x in score]
+            data_dict[f"past{past_n}_value_min"] = [np.array(x[-past_n:]).min() if len(x) > 0 else np.nan for x in score]
+
+        df_expect = pd.DataFrame(data_dict)
 
         df_expect = df_expect.astype("float32")
         df_actual = agger.partial_predict(df)
