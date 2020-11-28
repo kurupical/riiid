@@ -252,17 +252,17 @@ def train_lgbm_cv_newuser_with_tta(df: pd.DataFrame,
     y_oof1 = model.predict(df.loc[val_idx][features])
     w_df = df.loc[val_idx][features]
     w_df["rating_diff_content_user_id"] = w_df["rating_diff_content_user_id"] - 15
-    y_oof2 = model.predict(w_df.loc[val_idx][features])
+    y_oof2 = model.predict(w_df[features])
     w_df = df.loc[val_idx][features]
     w_df["rating_diff_content_user_id"] = w_df["rating_diff_content_user_id"] + 15
-    y_oof3 = model.predict(w_df.loc[val_idx][features])
+    y_oof3 = model.predict(w_df[features])
 
     df_oof = pd.DataFrame()
     df_oof["row_id"] = df.loc[val_idx].index
     df_oof["predict1"] = y_oof1
     df_oof["predict2"] = y_oof2
     df_oof["predict3"] = y_oof3
-    df_oof["predict"] = y_oof1*5 * y_oof2*0.25 + y_oof3*0.25
+    df_oof["predict"] = y_oof1*0.5 * y_oof2*0.25 + y_oof3*0.25
     df_oof["target"] = df.loc[val_idx]["answered_correctly"].values
     print("--- tta(rating) ---")
     print("rate-15: {}".format(roc_auc_score(df_oof["target"].values, df_oof["predict2"].values)))

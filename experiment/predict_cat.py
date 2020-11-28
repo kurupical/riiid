@@ -8,7 +8,6 @@ from feature_engineering.feature_factory import \
     UserLevelEncoder2, \
     NUniqueEncoder, \
     ShiftDiffEncoder, \
-    TargetEncodeVsUserId, \
     PartSeparator, \
     UserCountBinningEncoder, \
     CategoryLevelEncoder, \
@@ -29,7 +28,7 @@ from catboost import CatBoostClassifier
 
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/ex_057/20201110093556"
+model_dir = "../output/ex_120/20201124080819"
 
 data_types_dict = {
     'row_id': 'int64',
@@ -53,6 +52,7 @@ def get_logger():
 
 def run(debug,
         model_dir,
+        update_record,
         kaggle=False):
 
     if kaggle:
@@ -108,8 +108,6 @@ def run(debug,
             answered_correctlies.extend([int(x) for x in answered_correctly.replace("[", "").replace("'", "").replace("]", "").replace(" ", "").split(",")])
             user_answers.extend([int(x) for x in user_answer.replace("[", "").replace("'", "").replace("]", "").replace(" ", "").split(",")])
 
-        if debug:
-            update_record = 1
         if df_test_prev_rows > update_record:
             logger.info("------ fitting ------")
             logger.info("concat df")
@@ -145,6 +143,7 @@ def run(debug,
         df_test["prior_question_had_explanation"] = df_test["prior_question_had_explanation"].astype("float16").fillna(-1).astype("int8")
 
         df = feature_factory_manager.partial_predict(df_test)
+        df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
 
         # predict
         cols = models_cat[0].feature_names_
@@ -154,10 +153,9 @@ def run(debug,
         predicts_cat = []
         for model in models_cat:
             predicts_cat.append(model.predict_proba(w_df)[:, 1].flatten())
-        pred_cat = np.array(predicts_cat).mean(axis=0)
 
         logger.info("------ other ------")
-        df["answered_correctly"] = np.array(pred_cat).transpose().mean(axis=1)
+        df["answered_correctly"] = np.array(predicts_cat).transpose().mean(axis=1)
         df_sample_prediction = df[df["content_type_id"] == 0][["row_id", "answered_correctly"]]
         env.predict(df_sample_prediction)
         df_test_prev.append(df[cols + ["user_id", "tags"]])
@@ -167,4 +165,5 @@ def run(debug,
 
 if __name__ == "__main__":
     run(debug=False,
+        update_record=30,
         model_dir=model_dir)

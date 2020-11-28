@@ -417,7 +417,10 @@
 
 # 2020/11/19
 ## other
-GCP上でアップロード: kaggle datasets version -p riiid_code/ --dir-mode "zip" -m "test"
+GCP上でアップロード:  
+kaggle datasets init -p riiid_code/
+![image_46](image_46.png)
+kaggle datasets version -p riiid_code/ --dir-mode "zip" -m "test"
 
 # 2020/11/20
 ## experiment
@@ -478,7 +481,9 @@ GCP上でアップロード: kaggle datasets version -p riiid_code/ --dir-mode "
 * ex_116: Counterを入れた(content_type_id, part) -> 0.7832(変わらず)
 * ex_117: (user_id, part).mean("prior_question_elapsed") -> 0.7833
 * ex_118: study_time -> 0.7850
-* ex_119: userlevelとかcontentlevelがバグってると思うので消す ->
+* ex_119: userlevelとかcontentlevelがバグってると思うので消す -> CV: 0.7846 -> LB: 0.792!!
+* ex_120: lr=0.3 -> 0.1 & cat CV: (lgbm: 0.7866, cat0.7849, ensemble0.7876) -> lgbm LB: 0.793!!
+  * ただしcatはcategorical feature指定なし。4時間/model の時間がかかるので…
 
 ## EDA
 * 032_check_low_auc_tag\
@@ -486,4 +491,75 @@ GCP上でアップロード: kaggle datasets version -p riiid_code/ --dir-mode "
 
   * 分布見てみると、「もう予想できませーん」っていってるようなもん
   * ![image_45](image_45.png)
+
+# 2020/11/24
+## experiment
+* ex_121: QQ_table/QL_table -> threshold=100にしてみる。overfitしたのは別の原因ではCategory Level Encoderとかが悪さしてそうだし…
+-> CV: 0.7897 / LB: 0.793(へんかなし)
+
+## EDA
+* 036_w2v and swem
+
+# 2020/11/25
+## experiment
+* ex_122: W2V
+  * BaseLine(lr=0.3) -> CV: 0.7885
+  * window10-size3: CV: 0.7884
+  * window10-size5: CV: 0.7886
+  * window10-size10:  CV 0.7884
+  * window20-size3: 0.7886
+  * window20-size5: 0.7887
+  * window20-size10: 0.7884
+  * window50-size3: 0.7883
+  * window50-size5: 0.7886
+  * window50-size10: 0.7883
+* ex_123: TargetEncoding(tags1, tags2) -> CV: 0.7876
+* ex_124: ex_123 + Counter + regression -> CV: 0.7877
+* ex_125: ex_123 + Counter -> CV: 0.7877
+* ex_126: listening-readingでわけてrating + tta -> CV: 0.78729 -> 0.78734
+* ex_127: study time fix(shift: -1) -> CV: 0.7937(+0.006) だけどこれはリークだよね
+  * でも、elapsed_timeがわかると強いってことはわかった
+* ex_128: ElapsedTimeVsShiftDiffEncoder -> CV: 0.7880
+* ex_129: ShiftDiff replace(0 -> bfill)になおした(bundle_id対応) -> CV: 0.7889
+* ex_130: prior_question_elapsed_timeよりも、shiftdiff_timeのmeanのほうが効きそう -> CV: 0.7889
+  * ただし、>200000は消す処理入れたやつにする、study_timeとかも全部
+* ex_131: shiftdiff_time だけじゃなくて、prior_question_elapsed_timeにしとく -> CV: 0.7890
+* ex_132: ex_131 + top40 features CV: 0.7886
+## survey
+* DSB2019
+  * 1st
+    * statistics: last N hour features.
+    * event interval features / Density
+      * 過去何日でpart/tagをやった日数
+      * 一番最後のpart/tag timestamp, index
+    * video skip prop ratio
+      * Counter(prior_question_had_explanation)
+    * data augmentation??
+  * 2nd
+    * Decayed Historical feature.
+  * 7th
+    * On the Measure of Intelligence https://arxiv.org/abs/1911.01547
+    * learning tempo. (どれくらいのテンポで各個人が学習するのか)
+    * rating mean
+  * 15th: https://www.kaggle.com/c/data-science-bowl-2019/discussion/127500
+    * decaying counter
+    * Past assessment features: 正解時、失敗時に使った時間の平均
+
+# 2020/11/26
+* ex_133: QQ-Table2
+  * min_size=1000だと十分なサンプル集まらず。。min_size=300でre-try
+
+# 2020/11/27
+* ex_134: past10_user_rate,content_rate, te_user_id, te_content_id -> 0.7889
+* ex_135: past10_user_rate min/max/mean/std -> 0.7889
+* ex_136: timediff -> 0.7898(+0.0008!!) 採用! (past5, past50だけ)
+* ex_137: prior_question_elapsed_time_mean -> 0.7892
+* ex_138: timediff  + diff-diff(past5, past50) -> 0.7898
+* ex_139: tagsencoder -> Cv: 0.7901
+* ex_140: QQTable2 + QQTable -> CV: 0.7902 (QQTableは全データを使っているのに対し、QQTable2はmodel0の300万件しか使ってない
+  * QQTable2を採用する(ex_139)
+* ex_141: ex_139 - diff-diff -> CV: 0.7901
+* ex_142: 不必要なcolumn削る
 </div>
+
+

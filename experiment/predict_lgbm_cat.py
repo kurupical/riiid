@@ -8,7 +8,6 @@ from feature_engineering.feature_factory import \
     UserLevelEncoder2, \
     NUniqueEncoder, \
     ShiftDiffEncoder, \
-    TargetEncodeVsUserId, \
     PartSeparator, \
     UserCountBinningEncoder, \
     CategoryLevelEncoder, \
@@ -29,7 +28,7 @@ from catboost import CatBoostClassifier
 
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/ex_056/20201110002057"
+model_dir = "../output/ex_120/20201124080819"
 
 data_types_dict = {
     'row_id': 'int64',
@@ -53,6 +52,7 @@ def get_logger():
 
 def run(debug,
         model_dir,
+        update_record,
         kaggle=False):
 
     if kaggle:
@@ -100,7 +100,7 @@ def run(debug,
     i = 0
     for (df_test, df_sample_prediction) in iter_test:
         i += 1
-        logger.info(f"[iteration {i}: data_length: {len(df_test)}")
+        # logger.info(f"[iteration {i}: data_length: {len(df_test)}")
         # 前回のデータ更新
         if df_test_prev_rows > 0: # 初回のみパスするためのif
             answered_correctly = df_test.iloc[0]["prior_group_answers_correct"]
@@ -108,11 +108,9 @@ def run(debug,
             answered_correctlies.extend([int(x) for x in answered_correctly.replace("[", "").replace("'", "").replace("]", "").replace(" ", "").split(",")])
             user_answers.extend([int(x) for x in user_answer.replace("[", "").replace("'", "").replace("]", "").replace(" ", "").split(",")])
 
-        if debug:
-            update_record = 1
         if df_test_prev_rows > update_record:
-            logger.info("------ fitting ------")
-            logger.info("concat df")
+            # logger.info("------ fitting ------")
+            # logger.info("concat df")
             df_test_prev = pd.concat(df_test_prev)
             df_test_prev["answered_correctly"] = answered_correctlies
             df_test_prev["user_answer"] = user_answers
@@ -121,7 +119,7 @@ def run(debug,
             df_test_prev["answered_correctly"] = df_test_prev["answered_correctly"].replace(-1, np.nan)
             df_test_prev["prior_question_had_explanation"] = df_test_prev["prior_question_had_explanation"].fillna(-1).astype("int8")
 
-            logger.info("fit data")
+            # logger.info("fit data")
             feature_factory_manager.fit(df_test_prev)
 
             df_test_prev = []
@@ -131,7 +129,7 @@ def run(debug,
         # 今回のデータ取得&計算
 
         # logger.info(f"[time: {int(time.time() - t)}dataload")
-        logger.info(f"merge... ")
+        # logger.info(f"merge... ")
         w_df1 = pd.merge(df_test[df_test["content_type_id"] == 0], df_question, how="left", left_on="content_id",
                          right_on="question_id")
         w_df2 = pd.merge(df_test[df_test["content_type_id"] == 1], df_lecture, how="left", left_on="content_id",
@@ -141,14 +139,14 @@ def run(debug,
         df_test["correct_answer"] = df_test["correct_answer"].fillna(-1)
         df_test["bundle_id"] = df_test["bundle_id"].fillna(-1)
 
-        logger.info(f"transform... ")
+        # logger.info(f"transform... ")
         df_test["prior_question_had_explanation"] = df_test["prior_question_had_explanation"].astype("float16").fillna(-1).astype("int8")
 
         df = feature_factory_manager.partial_predict(df_test)
-        df.columns = [x.replace(" ", "_") for x in df.columns]
+        df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
 
         # predict
-        logger.info(f"predict lgbm...")
+        # logger.info(f"predict lgbm...")
         predicts_lgbm = []
         cols = models_lgbm[0].feature_name()
         w_df = df[cols]
@@ -156,13 +154,13 @@ def run(debug,
             predicts_lgbm.append(model.predict(w_df))
         pred_lgbm = np.array(predicts_lgbm).mean(axis=0)
 
-        logger.info(f"predict cat...")
+        # logger.info(f"predict cat...")
         predicts_cat = []
         for model in models_cat:
             predicts_cat.append(model.predict_proba(w_df.values)[:, 1].flatten())
         pred_cat = np.array(predicts_cat).mean(axis=0)
 
-        logger.info("other...")
+        # logger.info("other...")
         df["answered_correctly"] = pred_lgbm * 0.5 + pred_cat * 0.5
         df_sample_prediction = df[df["content_type_id"] == 0][["row_id", "answered_correctly"]]
         env.predict(df_sample_prediction)
@@ -173,4 +171,5 @@ def run(debug,
 
 if __name__ == "__main__":
     run(debug=True,
+        update_record=30,
         model_dir=model_dir)

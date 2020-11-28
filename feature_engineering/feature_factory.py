@@ -205,7 +205,8 @@ class Counter(FeatureFactory):
                 for col in self.categories:
                     self.data_dict[key][col] = 0
             for col, ww_df in w_df.groupby(self.agg_column):
-                self.data_dict[key][col] += len(ww_df)
+                if col in self.data_dict[key]:
+                    self.data_dict[key][col] += len(ww_df)
 
     def _all_predict_core(self,
                     df: pd.DataFrame):
@@ -237,6 +238,9 @@ class Counter(FeatureFactory):
         for col in cols:
             df[f"{col}_ratio"] = df[col] / df["count_enc_user_id"]
         return df
+
+    def __repr__(self):
+        return self.make_col_name
 
 
 class TargetEncoder(FeatureFactory):
@@ -437,11 +441,10 @@ class TagsTargetEncoder(FeatureFactory):
             if not os.path.isfile(self.tags_dict_path):
                 print("make_new_dict")
                 files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
-                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
-                                    ["tags", "answered_correctly"]] for f in files])
+                df = pd.concat([pd.read_pickle(f)[["tags", "answered_correctly"]] for f in files])
                 self.make_dict(df)
             with open(self.tags_dict_path, "rb") as f:
-                self.tags_dict_path = pickle.load(f)
+                self.tags_dict = pickle.load(f)
         else:
             self.tags_dict = tags_dict
         self.load_feature = load_feature
@@ -468,7 +471,7 @@ class TagsTargetEncoder(FeatureFactory):
         df = df[df["tags"].notnull()]
         df["tags_list"] = [x.split(" ") if type(x) == str else [] for x in df["tags"].values]
 
-        for tag in np.arange(256):
+        for tag in tqdm.tqdm(np.arange(256)):
             df["is_target"] = [str(tag) in x for x in df["tags_list"].values]
             w_df = df[df["is_target"]]
             if len(w_df) > 0:
@@ -478,6 +481,7 @@ class TagsTargetEncoder(FeatureFactory):
             output_dir = self.tags_dict_path
         with open(output_dir, "wb") as f:
             pickle.dump(ret_dict, f)
+        self.tags_dict = ret_dict
 
     def fit(self,
             df: pd.DataFrame,
@@ -1561,6 +1565,7 @@ class ShiftDiffEncoder(FeatureFactory):
         df[self.make_col_name] = df[self.column] - df.groupby(self.groupby)[self.column].shift(1)
         df[self.make_col_name] = df[self.make_col_name].replace(0, np.nan)
         df[self.make_col_name] = df.groupby(self.groupby)[self.make_col_name].fillna(method="ffill").fillna(0).astype("int64")
+        df[f"{self.make_col_name}_cap200k"] = [x if x < 200000 else 200000 for x in df[self.make_col_name].values]
         return df
 
     def partial_predict(self,
@@ -2216,8 +2221,8 @@ class QuestionQuestionTableEncoder2(FeatureFactory):
         if question_lecture_dict is None:
             if not os.path.isfile(self.question_lecture_dict_path.format(self.min_size)):
                 print("make_new_dict")
-                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")[:3]
-                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
+                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
+                df = pd.concat([pd.read_pickle(f).head(3_000_000).sort_values(["user_id", "timestamp"])[
                                     ["user_id", "content_id", "content_type_id", "answered_correctly"]] for f in files])
                 print("loaded")
                 self.make_dict(df)
@@ -2258,8 +2263,6 @@ class QuestionQuestionTableEncoder2(FeatureFactory):
                     (df["content_id"] == lecture).astype("uint8") * (df["answered_correctly"] == ans).astype("uint8")
                 df["lectured"] = df.groupby(["user_id"])["lectured_flg"].shift(1)
                 df["lectured"] = (df.groupby("user_id")["lectured"].cumsum() > 0).astype("uint8")
-                print(f"-- lecture {lecture} ans {ans} --")
-                print(df)
                 group = df[df["lectured"] == 1].groupby(["content_id", "past_answered"])["answered_correctly"]
                 w_dict_sum = group.sum().to_dict()
                 w_dict_size = group.size().to_dict()
@@ -2288,7 +2291,6 @@ class QuestionQuestionTableEncoder2(FeatureFactory):
                     self.data_dict[user_id][col] = w_df[col].values.tolist()[-self.past_n:]
             else:
                 for col in ["content_id", "answered_correctly"]:
-                    update_list_content_id = w_df[col].values.tolist()
                     self.data_dict[user_id][col] = (self.data_dict[user_id][col] + w_df[col].values.tolist())[-self.past_n:]
         return self
 
@@ -2395,17 +2397,17 @@ class QuestionQuestionTableEncoder2(FeatureFactory):
         expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
         expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
         expect_last = [x[-1] if len(x) > 0 else np.nan for x in score]
-        df["qq_table_mean"] = expect_mean
-        df["qq_table_sum"] = expect_sum
-        df["qq_table_max"] = expect_max
-        df["qq_table_min"] = expect_min
-        df["qq_table_last"] = expect_last
+        df["qq_table2_mean"] = expect_mean
+        df["qq_table2_sum"] = expect_sum
+        df["qq_table2_max"] = expect_max
+        df["qq_table2_min"] = expect_min
+        df["qq_table2_last"] = expect_last
 
-        df["qq_table_mean"] = df["qq_table_mean"].astype("float32")
-        df["qq_table_sum"] = df["qq_table_sum"].astype("float32")
-        df["qq_table_max"] = df["qq_table_max"].astype("float32")
-        df["qq_table_min"] = df["qq_table_min"].astype("float32")
-        df["qq_table_last"] = df["qq_table_last"].astype("float32")
+        df["qq_table2_mean"] = df["qq_table2_mean"].astype("float32")
+        df["qq_table2_sum"] = df["qq_table2_sum"].astype("float32")
+        df["qq_table2_max"] = df["qq_table2_max"].astype("float32")
+        df["qq_table2_min"] = df["qq_table2_min"].astype("float32")
+        df["qq_table2_last"] = df["qq_table2_last"].astype("float32")
 
         return df
 
@@ -2790,7 +2792,13 @@ class UserContentRateEncoder(FeatureFactory):
                     columns = ["timestamp", "content_id", "content_type_id", "answered_correctly"] + self.column
                 columns = [x for x in columns if "tags" not in x]
                 if "tags" not in self.column:
-                    df = pd.concat([pd.read_pickle(f)[columns] for f in files]).sort_values(["user_id", "timestamp"])
+                    if "is_listening" in self.column:
+                        columns = ["timestamp", "content_id", "content_type_id", "answered_correctly", "user_id", "part"]
+                        df = pd.concat([pd.read_pickle(f)[columns] for f in files]).sort_values(["user_id", "timestamp"])
+                        df["is_listening"] = (df["part"] < 5).astype("uint8")
+                    else:
+                        df = pd.concat([pd.read_pickle(f)[columns] for f in files]).sort_values(["user_id", "timestamp"])
+
                 else:
                     df = pd.concat([pd.read_pickle(f)[columns+["tags"]] for f in files]).sort_values(["user_id", "timestamp"])
 
@@ -3365,7 +3373,7 @@ class StudyTermEncoder(FeatureFactory):
 
     def _predict(self,
                  df: pd.DataFrame):
-        df["study_time"] = df["shiftdiff_timestamp_by_user_id"] - df["prior_question_elapsed_time"]
+        df["study_time"] = df["shiftdiff_timestamp_by_user_id_cap200k"] - df["prior_question_elapsed_time"]
         df["study_time"] = [x if x < 200000 else -1 for x in df["study_time"].fillna(-99).values]
         return df
 
@@ -3443,7 +3451,7 @@ class ElapsedTimeVsShiftDiffEncoder(FeatureFactory):
     def _predict(self,
                  df: pd.DataFrame):
         df["elapsed_time_content_id"] = [self.elapsed_time_dict[x] for x in df["content_id"].values]
-        df["diff_shiftdiff_elapsed_time"] = df["shiftdiff_timestamp_by_user_id"] - df["elapsed_time_content_id"]
+        df["diff_shiftdiff_elapsed_time"] = df["shiftdiff_timestamp_by_user_id_cap200k"] - df["elapsed_time_content_id"]
         return df
 
     def _all_predict_core(self,
@@ -3486,7 +3494,7 @@ class Word2VecEncoder(FeatureFactory):
         if w2v_dict is None:
             if not os.path.isfile(self.dict_path):
                 print("make_new_dict")
-                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
+                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")[:2]
                 df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[["user_id"] + self.columns] for f in files])
                 print("loaded")
                 self.make_dict(df)
@@ -3505,9 +3513,9 @@ class Word2VecEncoder(FeatureFactory):
         :return:
         """
 
-        df["key"] = ["_".join(x.tolist()) for x in df[self.columns]]
+        df["key"] = ["_".join(x.tolist()) for x in df[self.columns].astype(str).values]
         histories = df.groupby("user_id").agg({"key": list})
-        w2v = word2vec.Word2Vec(histories.values.flatten().tolist(), size=10, window=50)
+        w2v = word2vec.Word2Vec(histories.values.flatten().tolist(), size=self.size, window=self.window)
         ret_dict = {k: w2v[k].tolist() for k in w2v.wv.index2word}
         if output_dir is None:
             output_dir = self.dict_path
@@ -3553,13 +3561,14 @@ class Word2VecEncoder(FeatureFactory):
             score = np.array([calc_score(x) for x in w_df["list_keys"].values])
             return np.array(score)
 
-        self.logger.info(f"content_ua_score_encoding")
+        self.logger.info(f"Word2Vec encoding")
 
         df["key"] = ["_".join(x.tolist()) for x in df[self.columns].astype(str).values]
         df_rets = []
         for key, w_df in tqdm.tqdm(df.groupby("user_id")):
             score = f(w_df)
             df_ret = pd.DataFrame(index=w_df.index)
+
             expect_mean = np.array([np.array(x).mean(axis=0) if len(x) > 0 else np.nan for x in score])
             expect_max = np.array([np.array(x).max(axis=0) if len(x) > 0 else np.nan for x in score])
             expect_min = np.array([np.array(x).min(axis=0) if len(x) > 0 else np.nan for x in score])

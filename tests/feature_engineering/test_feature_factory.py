@@ -2156,11 +2156,11 @@ class PartialAggregatorTestCase(unittest.TestCase):
         expect_last = [x[-1] for x in score]
 
         df_expect = pd.DataFrame({
-            "qq_table_mean": expect_mean,
-            "qq_table_sum": expect_sum,
-            "qq_table_max": expect_max,
-            "qq_table_min": expect_min,
-            "qq_table_last": expect_last
+            "qq_table2_mean": expect_mean,
+            "qq_table2_sum": expect_sum,
+            "qq_table2_max": expect_max,
+            "qq_table2_min": expect_min,
+            "qq_table2_last": expect_last
         })
 
         df_expect = df_expect.astype("float32")

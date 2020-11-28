@@ -6,7 +6,7 @@ if os.path.isdir("riiid_code"):
     shutil.rmtree("riiid_code")
 os.makedirs("riiid_code/pretrained")
 
-for f in glob.glob("output/ex_084/20201116212648/*"):
+for f in glob.glob("output/ex_121/20201124190658/*"):
     if "csv" in f:
         continue
     if os.path.isdir(f):
@@ -15,7 +15,9 @@ for f in glob.glob("output/ex_084/20201116212648/*"):
         shutil.copyfile(f, f"riiid_code/pretrained/{os.path.basename(f)}")
 shutil.copytree("experiment", "riiid_code/experiment/")
 shutil.rmtree("riiid_code/experiment/mlruns")
-shutil.copytree("feature_engineering", "riiid_code/feature_engineering/")
+os.makedirs("riiid_code/feature_engineering")
+for f in glob.glob("feature_engineering/*"):
+    if ".pickle" not in f and os.path.isfile(f):
+        shutil.copy(f, "riiid_code/feature_engineering/")
 shutil.copytree("model", "riiid_code/model/")
 # shutil.copytree("pipeline", "riiid_code/pipeline/")
-
