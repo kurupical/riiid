@@ -3657,6 +3657,9 @@ class PastNFeatureEncoder(FeatureFactory):
         self.make_col_name = f"{self.__class__.__name__}_{column}_{past_ns}"
         self.data_dict = {}
 
+        if self.remove_now:
+            raise NotImplementedError
+
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
@@ -3676,7 +3679,7 @@ class PastNFeatureEncoder(FeatureFactory):
         for x in series.values:
             if not np.isnan(x):
                 w_ret.append(x)
-            ret.append(w_ret[:])
+            ret.append(w_ret[-self.past_n:])
         return ret
 
     def _make_feature(self, df, values):
@@ -3691,6 +3694,12 @@ class PastNFeatureEncoder(FeatureFactory):
                 if agg_func == "mean":
                     df[f"past{past_n}_{self.column}_mean"] = [np.array(x[-past_n:]).mean() if len(x) > 0 else np.nan for x in values]
                     df[f"past{past_n}_{self.column}_mean"] = df[f"past{past_n}_value_mean"].astype("float32")
+                if agg_func == "last":
+                    df[f"past{past_n}_{self.column}_last"] = [x[-past_n] if len(x) >= past_n else np.nan for x in values]
+                    df[f"past{past_n}_{self.column}_last"] = df[f"past{past_n}_value_last"].astype("float32")
+                if agg_func == "vslast":
+                    df[f"past{past_n}_{self.column}_vslast"] = [x[-1] - x[-past_n] if len(x) >= past_n else np.nan for x in values]
+                    df[f"past{past_n}_{self.column}_vslast"] = df[f"past{past_n}_value_vslast"].astype("float32")
 
         return df
 

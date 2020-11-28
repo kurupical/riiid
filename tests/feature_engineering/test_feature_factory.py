@@ -2293,7 +2293,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
                 "PastNFetureEncoder": PastNFeatureEncoder(past_ns=[2, 5],
                                                           column="value",
                                                           remove_now=False,
-                                                          agg_funcs=["max", "min", "mean"])
+                                                          agg_funcs=["max", "min", "mean", "last", "vslast"])
             }
         }
         agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
@@ -2324,6 +2324,10 @@ class PartialAggregatorTestCase(unittest.TestCase):
             data_dict[f"past{past_n}_value_max"] = [np.array(x[-past_n:]).max() if len(x) > 0 else np.nan for x in score]
             data_dict[f"past{past_n}_value_min"] = [np.array(x[-past_n:]).min() if len(x) > 0 else np.nan for x in score]
 
+        data_dict["past2_value_last"] = [np.nan, 10, 20, 30, 40, np.nan, np.nan, 10]
+        data_dict["past5_value_last"] = [np.nan, np.nan, np.nan, np.nan, 10, np.nan, np.nan, np.nan]
+        data_dict["past2_value_vslast"] = [np.nan, 10, 10, 10, 10, np.nan, np.nan, 10]
+        data_dict["past5_value_vslast"] = [np.nan, np.nan, np.nan, np.nan, 40, np.nan, np.nan, np.nan]
         df_expect = pd.DataFrame(data_dict)
 
         df_expect = df_expect.astype("float32")
@@ -2344,6 +2348,11 @@ class PartialAggregatorTestCase(unittest.TestCase):
             data_dict[f"past{past_n}_value_mean"] = [np.array(x[-past_n:]).mean() if len(x) > 0 else np.nan for x in score]
             data_dict[f"past{past_n}_value_max"] = [np.array(x[-past_n:]).max() if len(x) > 0 else np.nan for x in score]
             data_dict[f"past{past_n}_value_min"] = [np.array(x[-past_n:]).min() if len(x) > 0 else np.nan for x in score]
+
+        data_dict["past2_value_last"] = [50, 60, np.nan]
+        data_dict["past5_value_last"] = [20, 30, np.nan]
+        data_dict["past2_value_vslast"] = [10, 10, np.nan]
+        data_dict["past5_value_vslast"] = [40, 40, np.nan]
 
         df_expect = pd.DataFrame(data_dict)
 
