@@ -46,7 +46,8 @@ class FeatureFactory:
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[Union[str, tuple],
-                                       Dict[str, object]]):
+                                       Dict[str, object]],
+            is_first_fit: bool):
         raise NotImplementedError
 
     def make_feature(self,
@@ -143,7 +144,8 @@ class CountEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         w_dict = df.groupby(self.column).size().to_dict()
 
         for key, value in w_dict.items():
@@ -194,11 +196,8 @@ class Counter(FeatureFactory):
         self.is_partial_fit = is_partial_fit
         self.make_col_name = f"groupby_{self.groupby_column}_{self.agg_column}_counter"
 
-    def fit(self,
-            df: pd.DataFrame,
-            feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
-
+    def _fit(self,
+             df: pd.DataFrame):
         for key, w_df in df.groupby(self.groupby_column):
             if key not in self.data_dict:
                 self.data_dict[key] = {}
@@ -207,6 +206,14 @@ class Counter(FeatureFactory):
             for col, ww_df in w_df.groupby(self.agg_column):
                 if col in self.data_dict[key]:
                     self.data_dict[key][col] += len(ww_df)
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
+        if is_first_fit:
+            self._fit(df)
 
     def _all_predict_core(self,
                     df: pd.DataFrame):
@@ -227,12 +234,19 @@ class Counter(FeatureFactory):
     def partial_predict(self,
                         df: pd.DataFrame,
                         is_update: bool=True):
+        def f(x, col):
+            if x not in self.data_dict:
+                return 0
+            if col not in self.data_dict[x]:
+                return 0
+            return self.data_dict[x][col]
         cols = []
-        for col in self.categories:
+        if is_update:
+            self._fit(df)
+        for col in [-1, 0, 1]:
             col_name = f"groupby_{self.groupby_column}_{self.agg_column}_{col}_count"
             cols.append(col_name)
-            df[col_name] = [self.data_dict[x][col] if x in self.data_dict else 0
-                            for x in df[self.groupby_column].values]
+            df[col_name] = [f(x, col) for x in df[self.groupby_column].values]
             df[col_name] = df[col_name].astype("int32")
 
         for col in cols:
@@ -269,7 +283,8 @@ class TargetEncoder(FeatureFactory):
     def fit(self,
             df,
             feature_factory_dict: Dict[Union[str, tuple],
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
 
         def f(series):
             return series.notnull().sum()
@@ -339,7 +354,8 @@ class TagsSeparator(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         pass
 
     def make_feature(self,
@@ -392,7 +408,8 @@ class TagsSeparator2(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         pass
 
     def make_feature(self,
@@ -486,7 +503,8 @@ class TagsTargetEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         return self
 
     def _predict(self,
@@ -537,7 +555,8 @@ class PartSeparator(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         pass
 
     def make_feature(self,
@@ -585,7 +604,8 @@ class ContentIdTargetEncoderAggregator(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         pass
 
     def make_feature(self,
@@ -635,7 +655,8 @@ class TargetEncoderAggregator(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         pass
 
     def make_feature(self,
@@ -688,7 +709,8 @@ class ListeningReadingEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         pass
 
     def make_feature(self,
@@ -734,7 +756,8 @@ class UserCountBinningEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         pass
 
     def make_feature(self,
@@ -783,7 +806,8 @@ class PriorQuestionElapsedTimeDiv10Encoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         pass
 
     def make_feature(self,
@@ -831,7 +855,8 @@ class PriorQuestionElapsedTimeBinningEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         pass
 
     def make_feature(self,
@@ -880,7 +905,8 @@ class TargetEncodeVsUserContentId(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         pass
 
     def make_feature(self,
@@ -945,9 +971,9 @@ class MeanAggregator(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[Union[str, tuple],
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
 
-        is_first_fit = len(df) > 2000
         if is_first_fit:
             self._fit(df,
                       feature_factory_dict=feature_factory_dict)
@@ -996,8 +1022,9 @@ class MeanAggregator(FeatureFactory):
     def partial_predict(self,
                         df: pd.DataFrame,
                         is_update: bool=True):
-        self._fit(df,
-                  feature_factory_dict={})
+        if is_update:
+            self._fit(df,
+                      feature_factory_dict={})
         df = self._partial_predict2(df, column=self.make_col_name)
         df[self.make_col_name] = df[self.make_col_name].astype("float32")
         df[f"diff_{self.make_col_name}"] = (df[self.agg_column] - df[self.make_col_name]).astype("float32")
@@ -1029,7 +1056,8 @@ class UserLevelEncoder2(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         initial_bunshi = self.initial_score * self.initial_weight
         df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]
         for key, w_df in df.groupby(self.column):
@@ -1131,7 +1159,8 @@ class CategoryLevelEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_columns}"]
         group = df[df[self.agg_column].isin(self.categories)].groupby([self.groupby_column, self.agg_column])
         for keys, w_df in group[["answered_correctly", f"target_enc_{self.vs_columns}"]]:
@@ -1231,7 +1260,8 @@ class NUniqueEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[Union[str, tuple],
-                                       Dict[str, object]]):
+                                       Dict[str, object]],
+            is_first_fit: bool):
 
         group = df.groupby(self.groupby)
         if len(self.data_dict) == 0:
@@ -1296,7 +1326,8 @@ class SessionEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[Union[str, tuple],
-                                       Dict[str, object]]):
+                                       Dict[str, object]],
+            is_first_fit: bool):
         # TODO: 精度upするなら書く
         df["timestamp_diff"] = df["timestamp"] - df.groupby("user_id")["timestamp"].shift(1)
         df["timestamp_diff"] = df["timestamp_diff"].fillna(0).astype("int64")
@@ -1378,7 +1409,8 @@ class PreviousAnswer(FeatureFactory):
     def fit(self,
             group,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
 
         last_dict = group["answered_correctly"].last().to_dict()
         for key, value in last_dict.items():
@@ -1432,7 +1464,8 @@ class PreviousAnswer2(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
 
         group = df.groupby(self.groupby)
         for user_id, w_df in group[["content_id", "answered_correctly"]]:
@@ -1551,7 +1584,8 @@ class ShiftDiffEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[Union[str, tuple],
-                                       Dict[str, object]]):
+                                       Dict[str, object]],
+            is_first_fit: bool):
         group = df.groupby(self.groupby)
         if len(self.data_dict) == 0:
             self.data_dict = group[self.column].last().to_dict()
@@ -1594,6 +1628,7 @@ class ShiftDiffEncoder(FeatureFactory):
         w_diff = [x if not np.isnan(x) else f(idx) for idx, x in enumerate(w_diff.values)]
         df[self.make_col_name] = (df[self.column] - w_diff).replace(0, np.nan)
         df[self.make_col_name] = df.groupby(self.groupby)[self.make_col_name].fillna(method="ffill").fillna(0).astype("int64")
+        df[f"{self.make_col_name}_cap200k"] = [x if x < 200000 else 200000 for x in df[self.make_col_name].values]
 
         if is_update:
             for key, value in df.groupby(self.groupby)[self.column].last().to_dict().items():
@@ -1692,7 +1727,8 @@ class QuestionLectureTableEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         group = df[df["content_type_id"] == 1].groupby("user_id")
         for user_id, w_df in group[["content_type_id", "content_id"]]:
             if user_id not in self.data_dict:
@@ -1858,7 +1894,8 @@ class QuestionLectureTableEncoder2(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         group = df[df["content_type_id"] == 1].groupby("user_id")
         for user_id, w_df in group[["content_type_id", "content_id"]]:
             if user_id not in self.data_dict:
@@ -2071,7 +2108,8 @@ class QuestionQuestionTableEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         group = df[df["content_type_id"] == 0].groupby("user_id")
         for user_id, w_df in group[["content_type_id", "content_id"]]:
             if user_id not in self.data_dict:
@@ -2282,7 +2320,8 @@ class QuestionQuestionTableEncoder2(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         group = df[df["content_type_id"] == 0].groupby("user_id")
         for user_id, w_df in group[["content_id", "answered_correctly"]]:
             if user_id not in self.data_dict:
@@ -2391,7 +2430,6 @@ class QuestionQuestionTableEncoder2(FeatureFactory):
             return score
 
         score = [calc_score(x) for x in df[["user_id", "content_id", "content_type_id", "previous_answer_content_id"]].values]
-        print(score)
         expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
         expect_sum = [np.array(x).sum() if len(x) > 0 else np.nan for x in score]
         expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
@@ -2426,7 +2464,8 @@ class PreviousLecture(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[Union[str, tuple],
-                                       Dict[str, object]]):
+                                       Dict[str, object]],
+            is_first_fit: bool):
 
         group = df.groupby("user_id")
         for user_id, w_df in group:
@@ -2505,7 +2544,8 @@ class ContentLevelEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         initial_bunshi = self.initial_score * self.initial_weight
         df["rate"] = df["answered_correctly"] - df[f"target_enc_{self.vs_column}"]
         group = df.groupby(self.column)
@@ -2613,7 +2653,8 @@ class FirstColumnEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[Union[str, tuple],
-                                       Dict[str, object]]):
+                                       Dict[str, object]],
+            is_first_fit: bool):
         group = df.groupby(self.column)
         w_dict = group[self.agg_column].first().to_dict()
 
@@ -2680,7 +2721,8 @@ class FirstNAnsweredCorrectly(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[Union[str, tuple],
-                                       Dict[str, object]]):
+                                       Dict[str, object]],
+            is_first_fit: bool):
 
         group = df.groupby(self.column)
         for key, w_df in group:
@@ -2887,7 +2929,8 @@ class UserContentRateEncoder(FeatureFactory):
     def fit(self,
             df,
             feature_factory_dict: Dict[Union[str, tuple],
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
 
         columns = []
         if type(self.column) == str:
@@ -3042,7 +3085,8 @@ class UserAnswerLevelEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         group = df[df["content_type_id"] == 0].groupby("user_id")
         for user_id, w_df in group:
             w_df = w_df[["content_id", "user_answer"]]
@@ -3181,7 +3225,8 @@ class PreviousNAnsweredCorrectly(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[Union[str, tuple],
-                                       Dict[str, object]]):
+                                       Dict[str, object]],
+            is_first_fit: bool):
         group = df.groupby(self.column)
         for key, w_df in group:
             ans = "".join(w_df["answered_correctly"].fillna(9).astype(int).astype(str).values[::-1].tolist())
@@ -3283,7 +3328,8 @@ class WeightDecayTargetEncoder(FeatureFactory):
     def fit(self,
             df,
             feature_factory_dict: Dict[Union[str, tuple],
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
 
         ww_df = df.reset_index(drop=True).groupby(self.column).tail(self.past_n).reset_index(drop=True)
         group = ww_df.groupby(self.column)
@@ -3364,7 +3410,8 @@ class StudyTermEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         pass
 
     def make_feature(self,
@@ -3445,7 +3492,8 @@ class ElapsedTimeVsShiftDiffEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         return self
 
     def _predict(self,
@@ -3525,7 +3573,8 @@ class Word2VecEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
         df["key"] = ["_".join(x.tolist()) for x in df[self.columns].astype(str).values]
         list_dict = df.groupby("user_id").agg({"key": list}).to_dict()["key"]
         for user_id, list_key in list_dict.items():
@@ -3663,14 +3712,16 @@ class PastNFeatureEncoder(FeatureFactory):
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
-                                       Dict[str, FeatureFactory]]):
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
 
-        group = df[df[self.column].notnull()].groupby("user_id")
-        for user_id, w_df in group:
-            if user_id not in self.data_dict:
-                self.data_dict[user_id] = w_df[self.column].values.tolist()[-self.past_n:]
-            else:
-                self.data_dict[user_id] = (self.data_dict[self.column] + w_df[self.column].values.tolist())[-self.past_n:]
+        if is_first_fit:
+            group = df[df[self.column].notnull()].groupby("user_id")
+            for user_id, w_df in group:
+                if user_id not in self.data_dict:
+                    self.data_dict[user_id] = w_df[self.column].values.tolist()[-self.past_n:]
+                else:
+                    self.data_dict[user_id] = (self.data_dict[user_id] + w_df[self.column].values.tolist())[-self.past_n:]
         return self
 
     def make_lecture_list(self, series):
@@ -3687,19 +3738,19 @@ class PastNFeatureEncoder(FeatureFactory):
             for agg_func in self.agg_funcs:
                 if agg_func == "min":
                     df[f"past{past_n}_{self.column}_min"] = [np.array(x[-past_n:]).min() if len(x) > 0 else np.nan for x in values]
-                    df[f"past{past_n}_{self.column}_min"] = df[f"past{past_n}_value_min"].astype("float32")
+                    df[f"past{past_n}_{self.column}_min"] = df[f"past{past_n}_{self.column}_min"].astype("float32")
                 if agg_func == "max":
                     df[f"past{past_n}_{self.column}_max"] = [np.array(x[-past_n:]).max() if len(x) > 0 else np.nan for x in values]
-                    df[f"past{past_n}_{self.column}_max"] = df[f"past{past_n}_value_max"].astype("float32")
+                    df[f"past{past_n}_{self.column}_max"] = df[f"past{past_n}_{self.column}_max"].astype("float32")
                 if agg_func == "mean":
                     df[f"past{past_n}_{self.column}_mean"] = [np.array(x[-past_n:]).mean() if len(x) > 0 else np.nan for x in values]
-                    df[f"past{past_n}_{self.column}_mean"] = df[f"past{past_n}_value_mean"].astype("float32")
+                    df[f"past{past_n}_{self.column}_mean"] = df[f"past{past_n}_{self.column}_mean"].astype("float32")
                 if agg_func == "last":
                     df[f"past{past_n}_{self.column}_last"] = [x[-past_n] if len(x) >= past_n else np.nan for x in values]
-                    df[f"past{past_n}_{self.column}_last"] = df[f"past{past_n}_value_last"].astype("float32")
+                    df[f"past{past_n}_{self.column}_last"] = df[f"past{past_n}_{self.column}_last"].astype("float32")
                 if agg_func == "vslast":
                     df[f"past{past_n}_{self.column}_vslast"] = [x[-1] - x[-past_n] if len(x) >= past_n else np.nan for x in values]
-                    df[f"past{past_n}_{self.column}_vslast"] = df[f"past{past_n}_value_vslast"].astype("float32")
+                    df[f"past{past_n}_{self.column}_vslast"] = df[f"past{past_n}_{self.column}_vslast"].astype("float32")
 
         return df
 
@@ -3727,7 +3778,7 @@ class PastNFeatureEncoder(FeatureFactory):
             :return:
             """
             if user_id in self.data_dict:
-                ret = self.data_dict[user_id] + [value]
+                ret = (self.data_dict[user_id] + [value])[-self.past_n:]
             else:
                 ret = [value]
             if is_update:
@@ -3809,7 +3860,8 @@ class FeatureFactoryManager:
                         df = factory.all_predict(df)
                     df = factory.make_feature(df)
                     factory.fit(df=df,
-                                feature_factory_dict=self.feature_factory_dict)
+                                feature_factory_dict=self.feature_factory_dict,
+                                is_first_fit=is_first_fit)
 
         # not partial_fit
         for column, dicts in self.feature_factory_dict.items():
@@ -3818,7 +3870,8 @@ class FeatureFactoryManager:
             for factory in dicts.values():
                 if not factory.is_partial_fit:
                     factory.fit(df=df,
-                                feature_factory_dict=self.feature_factory_dict)
+                                feature_factory_dict=self.feature_factory_dict,
+                                is_first_fit=is_first_fit)
 
     def fit_predict(self,
                     df: pd.DataFrame):
