@@ -23,13 +23,13 @@ from feature_engineering.feature_factory import \
     PreviousNAnsweredCorrectly, \
     QuestionLectureTableEncoder, \
     QuestionLectureTableEncoder2, \
-    QuestionQuestionTableEncoder, \
+    QuestionQuestionTableEncoder2, \
     UserAnswerLevelEncoder, \
     WeightDecayTargetEncoder, \
     UserContentRateEncoder, \
     StudyTermEncoder, \
     ElapsedTimeVsShiftDiffEncoder, \
-    TagsTargetEncoder
+    PastNFeatureEncoder
 
 from experiment.common import get_logger, total_size
 import pandas as pd
@@ -90,13 +90,12 @@ def make_feature_factory_manager(split_num, model_id=None):
     feature_factory_dict["user_id"]["ShiftDiffEncoderTimestamp"] = ShiftDiffEncoder(groupby="user_id",
                                                                                     column="timestamp",
                                                                                     is_partial_fit=True)
+    feature_factory_dict["user_id"]["PastNTimestampEncoder"] = PastNFeatureEncoder(column="timestamp",
+                                                                                   past_ns=[5, 50],
+                                                                                   agg_funcs=["vslast"],
+                                                                                   remove_now=False)
     feature_factory_dict["user_id"]["StudyTermEncoder"] = StudyTermEncoder(is_partial_fit=True)
     feature_factory_dict["user_id"]["ElapsedTimeVsShiftDiffEncoder"] = ElapsedTimeVsShiftDiffEncoder()
-    # feature_factory_dict["user_id"]["UserLevelEncoder2ContentId"] = UserLevelEncoder2(vs_column="content_id")
-    # feature_factory_dict["content_id"]["ContentLevelEncoder2UserId"] = ContentLevelEncoder(vs_column="user_id", is_partial_fit=True)
-    # feature_factory_dict["user_id"]["MeanAggregatorContentLevel"] = MeanAggregator(column="user_id",
-    #                                                                                agg_column="content_level_user_id",
-    #                                                                                remove_now=False)
     feature_factory_dict["user_id"]["CountEncoder"] = CountEncoder(column="user_id", is_partial_fit=True)
     feature_factory_dict["user_id"]["UserCountBinningEncoder"] = UserCountBinningEncoder(is_partial_fit=True)
     feature_factory_dict["user_count_bin"] = {}
@@ -165,10 +164,10 @@ def make_feature_factory_manager(split_num, model_id=None):
                                                                                                    is_debug=is_debug,
                                                                                                    past_n=100,
                                                                                                    min_size=100)
-    feature_factory_dict["user_id"]["QuestionQuestionTableEncoder"] = QuestionQuestionTableEncoder(model_id=model_id,
-                                                                                                   is_debug=is_debug,
-                                                                                                   past_n=100,
-                                                                                                   min_size=300)
+    feature_factory_dict["user_id"]["QuestionQuestionTableEncoder2"] = QuestionQuestionTableEncoder2(model_id=model_id,
+                                                                                                     is_debug=is_debug,
+                                                                                                     past_n=100,
+                                                                                                     min_size=300)
     feature_factory_dict["user_id"]["UserContentRateEncoder"] = UserContentRateEncoder(column="user_id",
                                                                                        rate_func="elo")
     feature_factory_dict["post"] = {
@@ -184,6 +183,7 @@ def make_feature_factory_manager(split_num, model_id=None):
     return feature_factory_manager
 
 for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
+    break
     print(fname)
     if is_debug:
         df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)]).reset_index(drop=True)
@@ -198,7 +198,7 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
         'objective': 'binary',
         'num_leaves': 96,
         'max_depth': -1,
-        'learning_rate': 0.3,
+        'learning_rate': 0.1,
         'boosting': 'gbdt',
         'bagging_fraction': 0.5,
         'feature_fraction': 0.7,
@@ -212,9 +212,6 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
         "early_stopping_rounds": 50
     }
     df.tail(1000).to_csv("exp028.csv", index=False)
-
-    for past in [5, 50]:
-        df[f"timestamp_{past}_diff"] = df["timestamp"] - df.groupby("user_id")["timestamp"].shift(past)
 
     df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_3_ans"], axis=1)
     df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
@@ -232,7 +229,6 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
                           exp_name=model_id,
                           is_debug=is_debug,
                           drop_user_id=True)
-    1/0
     params = {
         'n_estimators': 12000,
         'learning_rate': 0.1,
@@ -308,7 +304,7 @@ for i, fname in enumerate(glob.glob("../input/riiid-test-answer-prediction/split
                              how="left", left_on="content_id", right_on="question_id"),
                     pd.merge(df[df["content_type_id"] == 1], df_lecture,
                              how="left", left_on="content_id", right_on="lecture_id")]).sort_values(
-        ["user_id", "timestamp"])
+        ["user_id", "timestamp"]).reset_index(drop=True)
     # df = feature_factory_manager.feature_factory_dict["content_id"]["TargetEncoder"].all_predict(df)
     feature_factory_manager.fit(df, is_first_fit=True)
 

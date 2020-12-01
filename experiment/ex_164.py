@@ -23,13 +23,13 @@ from feature_engineering.feature_factory import \
     PreviousNAnsweredCorrectly, \
     QuestionLectureTableEncoder, \
     QuestionLectureTableEncoder2, \
-    QuestionQuestionTableEncoder, \
+    QuestionQuestionTableEncoder2, \
     UserAnswerLevelEncoder, \
     WeightDecayTargetEncoder, \
     UserContentRateEncoder, \
     StudyTermEncoder, \
     ElapsedTimeVsShiftDiffEncoder, \
-    TagsTargetEncoder
+    PastNFeatureEncoder
 
 from experiment.common import get_logger, total_size
 import pandas as pd
@@ -90,23 +90,17 @@ def make_feature_factory_manager(split_num, model_id=None):
     feature_factory_dict["user_id"]["ShiftDiffEncoderTimestamp"] = ShiftDiffEncoder(groupby="user_id",
                                                                                     column="timestamp",
                                                                                     is_partial_fit=True)
+    feature_factory_dict["user_id"]["PastNTimestampEncoder"] = PastNFeatureEncoder(column="timestamp",
+                                                                                   past_ns=[5, 20],
+                                                                                   agg_funcs=["vslast"],
+                                                                                   remove_now=False)
+    feature_factory_dict["user_id"]["Past1ContentTypeId"] = PastNFeatureEncoder(column="content_type_id",
+                                                                                past_ns=[5, 15],
+                                                                                agg_funcs=["mean"],
+                                                                                remove_now=False)
     feature_factory_dict["user_id"]["StudyTermEncoder"] = StudyTermEncoder(is_partial_fit=True)
     feature_factory_dict["user_id"]["ElapsedTimeVsShiftDiffEncoder"] = ElapsedTimeVsShiftDiffEncoder()
-    # feature_factory_dict["user_id"]["UserLevelEncoder2ContentId"] = UserLevelEncoder2(vs_column="content_id")
-    # feature_factory_dict["content_id"]["ContentLevelEncoder2UserId"] = ContentLevelEncoder(vs_column="user_id", is_partial_fit=True)
-    # feature_factory_dict["user_id"]["MeanAggregatorContentLevel"] = MeanAggregator(column="user_id",
-    #                                                                                agg_column="content_level_user_id",
-    #                                                                                remove_now=False)
     feature_factory_dict["user_id"]["CountEncoder"] = CountEncoder(column="user_id", is_partial_fit=True)
-    feature_factory_dict["user_id"]["UserCountBinningEncoder"] = UserCountBinningEncoder(is_partial_fit=True)
-    feature_factory_dict["user_count_bin"] = {}
-    feature_factory_dict["user_count_bin"]["TargetEncoder"] = TargetEncoder(column="user_count_bin")
-    feature_factory_dict[("user_id", "user_count_bin")] = {
-        "TargetEncoder": TargetEncoder(column=["user_id", "user_count_bin"])
-    }
-    feature_factory_dict[("content_id", "user_count_bin")] = {
-        "TargetEncoder": TargetEncoder(column=["content_id", "user_count_bin"])
-    }
     feature_factory_dict[("user_id", "part")] = {
         "UserContentRateEncoder": UserContentRateEncoder(column=["user_id", "part"],
                                                          rate_func="elo")
@@ -116,59 +110,44 @@ def make_feature_factory_manager(split_num, model_id=None):
         if column not in feature_factory_dict:
             feature_factory_dict[column] = {}
         if type(column) == str:
-            feature_factory_dict[column][f"MeanAggregatorPriorQuestionElapsedTimeby{column}"] = MeanAggregator(column=column,
-                                                                                                               agg_column="prior_question_elapsed_time",
-                                                                                                               remove_now=True)
             feature_factory_dict[column][f"MeanAggregatorShiftDiffTimeElapsedTimeby{column}"] = MeanAggregator(column=column,
                                                                                                                agg_column="shiftdiff_timestamp_by_user_id_cap200k",
-                                                                                                               remove_now=True)
+                                                                                                               remove_now=False)
             feature_factory_dict[column][f"MeanAggregatorStudyTimeby{column}"] = MeanAggregator(column=column,
                                                                                                 agg_column="study_time",
-                                                                                                remove_now=True)
+                                                                                                remove_now=False)
         else:
-            feature_factory_dict[column][f"MeanAggregatorPriorQuestionElapsedTimeby{column}"] = MeanAggregator(column=list(column),
-                                                                                                               agg_column="prior_question_elapsed_time",
-                                                                                                               remove_now=True)
             feature_factory_dict[column][f"MeanAggregatorShiftDiffTimeElapsedTimeby{column}"] = MeanAggregator(column=list(column),
                                                                                                                agg_column="shiftdiff_timestamp_by_user_id_cap200k",
-                                                                                                               remove_now=True)
+                                                                                                               remove_now=False)
             feature_factory_dict[column][f"MeanAggregatorStudyTimeby{column}"] = MeanAggregator(column=list(column),
                                                                                                 agg_column="study_time",
-                                                                                                remove_now=True)
+                                                                                                remove_now=False)
 
 
     feature_factory_dict["user_id"]["CategoryLevelEncoderPart"] = CategoryLevelEncoder(groupby_column="user_id",
                                                                                        agg_column="part",
                                                                                        categories=[2, 5])
 
-    feature_factory_dict["prior_question_elapsed_time"] = {
-        "PriorQuestionElapsedTimeBinningEncoder": PriorQuestionElapsedTimeBinningEncoder(is_partial_fit=True)
-    }
-    feature_factory_dict[("part", "prior_question_elapsed_time_bin")] = {
-        "TargetEncoder": TargetEncoder(column=["part", "prior_question_elapsed_time_bin"])
-    }
     feature_factory_dict["user_id"]["PreviousAnswer2"] = PreviousAnswer2(groupby="user_id",
                                                                          column="content_id",
                                                                          is_debug=is_debug,
                                                                          model_id=model_id,
-                                                                         n=500)
-    feature_factory_dict["user_id"]["PreviousNAnsweredCorrectly"] = PreviousNAnsweredCorrectly(n=3,
+                                                                         n=300)
+    feature_factory_dict["user_id"]["PreviousNAnsweredCorrectly"] = PreviousNAnsweredCorrectly(n=5,
                                                                                                is_partial_fit=True)
-    feature_factory_dict["user_id"]["Counter"] = Counter(groupby_column="user_id",
-                                                         agg_column="prior_question_had_explanation",
-                                                         categories=[0, 1])
 
-    feature_factory_dict[f"previous_3_ans"] = {
-        "TargetEncoder": TargetEncoder(column="previous_3_ans")
+    feature_factory_dict[f"previous_5_ans"] = {
+        "TargetEncoder": TargetEncoder(column="previous_5_ans")
     }
     feature_factory_dict["user_id"]["QuestionLectureTableEncoder2"] = QuestionLectureTableEncoder2(model_id=model_id,
                                                                                                    is_debug=is_debug,
                                                                                                    past_n=100,
                                                                                                    min_size=100)
-    feature_factory_dict["user_id"]["QuestionQuestionTableEncoder"] = QuestionQuestionTableEncoder(model_id=model_id,
-                                                                                                   is_debug=is_debug,
-                                                                                                   past_n=100,
-                                                                                                   min_size=300)
+    feature_factory_dict["user_id"]["QuestionQuestionTableEncoder2"] = QuestionQuestionTableEncoder2(model_id=model_id,
+                                                                                                     is_debug=is_debug,
+                                                                                                     past_n=100,
+                                                                                                     min_size=300)
     feature_factory_dict["user_id"]["UserContentRateEncoder"] = UserContentRateEncoder(column="user_id",
                                                                                        rate_func="elo")
     feature_factory_dict["post"] = {
@@ -203,8 +182,8 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
         'bagging_fraction': 0.5,
         'feature_fraction': 0.7,
         'bagging_seed': 0,
-        'reg_alpha': 100,  # 1.728910519108444,
-        'reg_lambda': 20,
+        'reg_alpha': 50,  # 1.728910519108444,
+        'reg_lambda': 200,
         'random_state': 0,
         'metric': 'auc',
         'verbosity': -1,
@@ -213,10 +192,7 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
     }
     df.tail(1000).to_csv("exp028.csv", index=False)
 
-    for past in [5, 50]:
-        df[f"timestamp_{past}_diff"] = df["timestamp"] - df.groupby("user_id")["timestamp"].shift(past)
-
-    df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_3_ans"], axis=1)
+    df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_5_ans"], axis=1)
     df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
     df = df[df["answered_correctly"].notnull()]
     print(df.columns)
@@ -232,7 +208,6 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
                           exp_name=model_id,
                           is_debug=is_debug,
                           drop_user_id=True)
-    1/0
     params = {
         'n_estimators': 12000,
         'learning_rate': 0.1,
@@ -308,18 +283,23 @@ for i, fname in enumerate(glob.glob("../input/riiid-test-answer-prediction/split
                              how="left", left_on="content_id", right_on="question_id"),
                     pd.merge(df[df["content_type_id"] == 1], df_lecture,
                              how="left", left_on="content_id", right_on="lecture_id")]).sort_values(
-        ["user_id", "timestamp"])
+        ["user_id", "timestamp"]).reset_index(drop=True)
     # df = feature_factory_manager.feature_factory_dict["content_id"]["TargetEncoder"].all_predict(df)
     feature_factory_manager.fit(df, is_first_fit=True)
 
     if i == 0:
+        size = 0
         for k, v in feature_factory_manager.feature_factory_dict.items():
             for kk, vv in v.items():
                 try:
-                    print(f"{k}-{vv}: len={len(vv.data_dict)} size={round(total_size(vv.data_dict) / 1_000_000, 2)}MB")
+                    w_size = round(total_size(vv.data_dict) / 1_000_000, 2)
+                    print(f"{k}-{vv}: len={len(vv.data_dict)} size={w_size}MB")
+                    size += w_size
                 except Exception as e:
                     print(f"{k}-{kk} error")
                     print(e)
+        print(f"-------------------")
+        print(f"total_size={size}MB")
 
 for dicts in feature_factory_manager.feature_factory_dict.values():
     for factory in dicts.values():
