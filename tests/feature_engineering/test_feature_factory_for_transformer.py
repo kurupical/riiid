@@ -19,9 +19,9 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         pickle_dir = "./test.pickle"
 
-        agger.make_dict(df=df,
-                        column="content_id",
-                        output_dir=pickle_dir)
+        agger._make_dict(df=df,
+                         column="content_id",
+                         output_dir=pickle_dir)
 
         with open(pickle_dir, "rb") as f:
             actual = pickle.load(f)
@@ -46,9 +46,9 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         pickle_dir = "./test.pickle"
 
-        agger.make_dict(df=df,
-                        column="part",
-                        output_dir=pickle_dir)
+        agger._make_dict(df=df,
+                         column="part",
+                         output_dir=pickle_dir)
 
         with open(pickle_dir, "rb") as f:
             actual = pickle.load(f)
@@ -72,9 +72,9 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         pickle_dir = "./test.pickle"
 
-        agger.make_dict(df=df,
-                        column=("content_id", "content_type_id"),
-                        output_dir=pickle_dir)
+        agger._make_dict(df=df,
+                         column=("content_id", "content_type_id"),
+                         output_dir=pickle_dir)
 
         with open(pickle_dir, "rb") as f:
             actual = pickle.load(f)
@@ -134,18 +134,65 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         actual = agger.partial_predict(df)
         expect = {
-            1: {"content_id": [4, 1],
+            0: {"content_id": [4, 1],
                 "part": [1, 2],
                 "answered_correctly": [0, -1]},
-            2: {"content_id": [1, 1],
+            1: {"content_id": [1, 1],
                 "part": [2, 2],
                 "answered_correctly": [1, -1]},
-            3: {"content_id": [2, 1],
+            2: {"content_id": [2, 1],
                 "part": [1, 2],
                 "answered_correctly": [1, -1]},
-            4: {"content_id": [2],
+            3: {"content_id": [2],
                 "part": [2],
                 "answered_correctly": [-1]}
+        }
+        self.assertEqual(expect, actual)
+
+
+    def test_normal_multikey(self):
+        logger = get_logger()
+
+        embbed_dict = {
+            ("content_id", "content_type_id"): {(1, 1): 1, (1, 2): 2, (2, 1): 3, (2, 2): 4},
+        }
+        agger = FeatureFactoryForTransformer(column_config={("content_id", "content_type_id"): {"type": "category"}},
+                                             dict_path=None,
+                                             embbed_dict=embbed_dict,
+                                             sequence_length=2,
+                                             logger=logger)
+        df = pd.DataFrame({"user_id": [1, 1, 2, 2],
+                           "content_id": [1, 1, 2, 2],
+                           "answered_correctly": [1, 1, 1, 0],
+                           "content_type_id": [1, 2, 1, 2],
+                           "is_val": [0, 0, 0, 1]})
+
+        actual = agger.all_predict(df)
+        expect = {
+            1: {("content_id", "content_type_id"): [1, 2],
+                "answered_correctly": [1, 1],
+                "is_val": [0, 0]},
+            2: {("content_id", "content_type_id"): [3, 4],
+                "answered_correctly": [1, 0],
+                "is_val": [0, 1]},
+        }
+
+        self.assertEqual(expect, actual)
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        df = pd.DataFrame({"user_id": [1, 2, 3],
+                           "content_type_id": [1, 1, 1],
+                           "content_id": [1, 1, 2]})
+
+        actual = agger.partial_predict(df)
+        expect = {
+            0: {("content_id", "content_type_id"): [2, 1],
+                "answered_correctly": [1, -1]},
+            1: {("content_id", "content_type_id"): [4, 1],
+                "answered_correctly": [0, -1]},
+            2: {("content_id", "content_type_id"): [3],
+                "answered_correctly": [-1]},
         }
         self.assertEqual(expect, actual)
 
