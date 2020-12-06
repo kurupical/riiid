@@ -3793,6 +3793,120 @@ class PastNFeatureEncoder(FeatureFactory):
         return self.__class__.__name__
 
 
+class PreviousContentAnswerTargetEncoder(FeatureFactory):
+    prev_dict_path = "../feature_engineering/previous_content_answer_te_{}.pickle"
+
+    def __init__(self,
+                 min_size: int=1000,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 prev_dict: Union[Dict[tuple, float], None] = None,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
+        self.min_size = min_size
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.make_col_name = f"{self.__class__.__name__}_th{self.min_size}"
+        self.data_dict = {}
+        if prev_dict is None:
+            if not os.path.isfile(self.prev_dict_path.format(self.min_size)):
+                print("make_new_dict")
+                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
+                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
+                                    ["user_id", "content_id", "content_type_id", "user_answer", "answered_correctly"]
+                                ] for f in files])
+                print("loaded")
+                self.make_dict(df)
+            with open(self.prev_dict_path.format(self.min_size), "rb") as f:
+                self.prev_dict = pickle.load(f)
+        else:
+            self.prev_dict = prev_dict
+
+    def make_dict(self,
+                  df: pd.DataFrame,
+                  output_dir: str = None):
+        """
+        question_lecture_dictを作って, 所定の場所に保存する
+        :param df:
+        :param is_output:
+        :return:
+        """
+
+        ret_dict = {}
+        df["previous_content_id"] = df.groupby("user_id")["content_id"].shift(1).fillna(-1)
+        df["previous_user_answer"] = df.groupby("user_id")["user_answer"].shift(1).fillna(-1)
+
+        group = df[df["content_type_id"] == 0].groupby(["content_id", "previous_content_id", "previous_user_answer"])["answered_correctly"]
+
+        sum_dict = group.sum()
+        size_dict = group.size()
+
+        for key in tqdm.tqdm(sum_dict.keys()):
+            if size_dict[key] > self.min_size:
+                ret_dict[key] = sum_dict[key] / size_dict[key]
+
+        if output_dir is None:
+            output_dir = self.prev_dict_path.format(self.min_size)
+        with open(output_dir, "wb") as f:
+            pickle.dump(ret_dict, f)
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
+
+        w_ary = df.groupby("user_id").last()[["content_id", "user_answer"]].reset_index().values
+        for data in w_ary:
+            self.data_dict[data[0]] = (data[1], data[2])
+        return self
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"previous_content_answer_te__encode")
+
+        df["previous_content_id"] = df.groupby("user_id")["content_id"].shift(1).fillna(-1)
+        df["previous_user_answer"] = df.groupby("user_id")["user_answer"].shift(1).fillna(-1)
+
+        cols = ["content_id", "previous_content_id", "previous_user_answer"]
+        df["prev_ans_te"] = [self.prev_dict[tuple(x)] if tuple(x) in self.prev_dict else np.nan for x in df[cols].values]
+        df["prev_ans_te"] = df["prev_ans_te"].astype("float32")
+
+        df = df.drop(["previous_content_id", "previous_user_answer"], axis=1)
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        def f(x):
+            user_id = x[0]
+            content_id = x[1]
+            if user_id in self.data_dict:
+                prev_content_id = self.data_dict[user_id][0]
+                prev_user_answer = self.data_dict[user_id][1]
+                key = (content_id, prev_content_id, prev_user_answer)
+                if key in self.prev_dict:
+                    return self.predict[key]
+                else:
+                    return np.nan
+            else:
+                key = (content_id, -1, -1)
+                if key in self.prev_dict:
+                    return self.prev_dict[key]
+                else:
+                    return np.nan
+        df["prev_ans_te"] = [f(x) for x in df[["user_id", "content_id"]].values]
+        df["prev_ans_te"] = df["prev_ans_te"].astype("float32")
+        return df
+
+    def __repr__(self):
+        return self.__class__.__name__
 
 
 class FeatureFactoryManager:

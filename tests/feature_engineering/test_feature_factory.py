@@ -29,7 +29,8 @@ from feature_engineering.feature_factory import \
     ElapsedTimeVsShiftDiffEncoder, \
     QuestionQuestionTableEncoder2, \
     TagsTargetEncoder, \
-    PastNFeatureEncoder
+    PastNFeatureEncoder, \
+    PreviousContentAnswerTargetEncoder
 from experiment.common import get_logger
 import pickle
 import os
@@ -2362,7 +2363,119 @@ class PartialAggregatorTestCase(unittest.TestCase):
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
 
+    def test_previous_content_answer_te_make_dict(self):
 
+        u1_c_id = [1, 2, 3]
+        u1_c_type = [0, 0, 0]
+        u1_u_ans = [1, 1, 2]
+        u1_target = [1, 1, 1]
+
+        u2_c_id = [1, 2, 3]
+        u2_c_type = [0, 0, 0]
+        u2_u_ans = [2, 2, 1]
+        u2_target = [0, 0, 0]
+
+        u3_c_id = [1, 2, 3]
+        u3_c_type = [0, 0, 0]
+        u3_u_ans = [2, 2, 1]
+        u3_target = [1, 0, 1]
+
+        u4_c_id = [1, 2]
+        u4_c_type = [-1, 0]
+        u4_u_ans = [-1, 1]
+        u4_target = [-1, 0]
+
+        df = pd.DataFrame({"user_id": [1]*3 + [2]*3 + [3]*3 + [4]*2,
+                           "content_id": u1_c_id + u2_c_id + u3_c_id + u4_c_id,
+                           "content_type_id": u1_c_type + u2_c_type + u3_c_type + u4_c_type,
+                           "user_answer": u1_u_ans + u2_u_ans + u3_u_ans + u4_u_ans,
+                           "answered_correctly": u1_target + u2_target + u3_target + u4_target})
+        pickle_dir = "./test_dict.pickle"
+        if os.path.isdir(pickle_dir):
+            os.remove(pickle_dir)
+
+        # key: (now_content_id, past_content_id, user_answer)
+        expect = {
+            (1, -1, -1): 2/3,
+            (2, 1, -1): 0/1,
+            (2, 1, 1): 1/1,
+            (2, 1, 2): 0/2,
+            (3, 2, 1): 1/1,
+            (3, 2, 2): 1/2
+        }
+
+        encoder = PreviousContentAnswerTargetEncoder(prev_dict={},
+                                                     min_size=0)
+
+        encoder.make_dict(df, output_dir=pickle_dir)
+        with open(pickle_dir, "rb") as f:
+            actual = pickle.load(f)
+
+        self.assertEqual(expect, actual)
+        os.remove(pickle_dir)
+
+
+    def test_previous_content_answer_te(self):
+        logger = get_logger()
+
+        prev_dict = {
+            (1, -1, -1): 0.005,
+            (2, 1, -1): 0.01,
+            (2, 1, 1): 0.02,
+            (2, 1, 2): 0.04,
+            (3, 2, -1): 0.08,
+            (3, 2, 1): 0.16,
+            (3, 2, 2): 0.32,
+            (4, 3, 1): 0.64,
+            (4, 3, 2): 1.28
+        }
+
+        feature_factory_dict = {
+            "user_id": {
+                "PreviousContentAnswerTargetEncoder": PreviousContentAnswerTargetEncoder(prev_dict=prev_dict)
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+        u1_c_id = [1, 2, 3]
+        u1_c_type = [0, 0, 0]
+        u1_u_ans = [1, 2, 1]
+
+        u2_c_id = [1, 2, 3]
+        u2_c_type = [0, 0, 0]
+        u2_u_ans = [2, 1, 2]
+
+        u3_c_id = [1, 2]
+        u3_c_type = [0, 0]
+        u3_u_ans = [-1, 1]
+
+        df = pd.DataFrame({"user_id": [1]*3 + [2]*3 + [3]*2,
+                           "content_id": u1_c_id + u2_c_id + u3_c_id,
+                           "content_type_id": u1_c_type + u2_c_type + u3_c_type,
+                           "user_answer": u1_u_ans + u2_u_ans + u3_u_ans,
+                           "answered_correctly": [0]*8})
+
+        df_expect = pd.DataFrame({"prev_ans_te": [0.005, 0.02, 0.32, 0.005, 0.04, 0.16, 0.005, 0.01]}).astype("float32")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        agger.fit(df.iloc[0:1])
+        agger.fit(df.iloc[1:2])
+        agger.fit(df.iloc[2:3])
+        agger.fit(df.iloc[3:4])
+        agger.fit(df.iloc[4:6])
+        agger.fit(df.iloc[6:8])
+
+        df = pd.DataFrame({"user_id": [1, 2, 3, 3, 4],
+                           "content_id": [4, 4, 3, 3, 1],
+                           "content_type_id": [0, 0, 0, 0, 0],
+                           "user_answer": [1, 1, 1, 1, 1]})
+
+        df_expect = pd.DataFrame({"prev_ans_te": [0.64, 1.28, 0.16, 0.16, 0.005]}).astype("float32")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
 
 if __name__ == "__main__":
