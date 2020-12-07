@@ -26,7 +26,7 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/ex_121/20201124190658"
+model_dir = "../output/ex_173/20201203071526"
 
 data_types_dict = {
     'row_id': 'int64',
@@ -142,6 +142,7 @@ def run(debug,
         df = feature_factory_manager.partial_predict(df_test)
         df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
         logger.info(f"------ predict ------")
+
 
         # predict
         predicts = []

@@ -28,7 +28,7 @@ from catboost import CatBoostClassifier
 
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/ex_120/20201124080819"
+model_dir = "../output/ex_172/20201202080625"
 
 data_types_dict = {
     'row_id': 'int64',
@@ -171,5 +171,5 @@ def run(debug,
 
 if __name__ == "__main__":
     run(debug=True,
-        update_record=30,
+        update_record=1,
         model_dir=model_dir)

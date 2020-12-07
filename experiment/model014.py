@@ -25,10 +25,10 @@ from experiment.common import get_logger
 
 torch.manual_seed(0)
 np.random.seed(0)
-is_debug = True
+is_debug = False
 is_make_feature_factory = True
 epochs = 25
-device = torch.device("cpu")
+device = torch.device("cuda")
 
 output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
 os.makedirs(output_dir, exist_ok=True)
@@ -229,7 +229,6 @@ def train_epoch(model, train_iterator, val_iterator, optim, criterion, device="c
 def main(params: dict):
     import mlflow
     logger = get_logger()
-    """
     print("start params={}".format(params))
     # df = pd.read_pickle("../input/riiid-test-answer-prediction/train_merged.pickle").head(30_000_000)
     df = pd.read_pickle("../input/riiid-test-answer-prediction/split10/train_0.pickle").sort_values(["user_id", "timestamp"]).reset_index(drop=True)
@@ -352,7 +351,6 @@ def main(params: dict):
     torch.save(model.state_dict(), f"{output_dir}/transformers.pth")
     with open(f"{output_dir}/transformer_param.json", "w") as f:
         json.dump(params, f)
-    """
     if is_make_feature_factory:
         ff_for_transformer = FeatureFactoryForTransformer(column_config={("content_id", "content_type_id"): {"type": "category"},
                                                                           "part": {"type": "category"}},
@@ -370,7 +368,9 @@ def main(params: dict):
 
 
 if __name__ == "__main__":
-    params = {"embed_dim": 256,
-              "max_seq": 10,
-              "lr": 1e-3}
-    main(params)
+    for embed_dim in [128, 256]:
+        for max_seq in [10, 20, 30]:
+            params = {"embed_dim": embed_dim,
+                      "max_seq": max_seq,
+                      "lr": 1e-3}
+            main(params)

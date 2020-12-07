@@ -218,7 +218,7 @@ class Counter(FeatureFactory):
     def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"categories_count_{self.groupby_column}")
-        for col in df[self.agg_column].drop_duplicates():
+        for col in self.categories:
             def f(series):
                 w = (series == col).astype("int8").values
                 return np.cumsum(w)
@@ -322,7 +322,18 @@ class TargetEncoder(FeatureFactory):
 
         self.logger.info(f"target_encoding_all_{self.column}")
 
-        df[self.make_col_name] = df.groupby(self.column)["answered_correctly"].transform(f).astype("float32")
+        self.logger.info("shift1...")
+        df["shift1"] = df.groupby(self.column)["answered_correctly"].shift(1)
+        self.logger.info("notnull...")
+        df["notnull"] = df["shift1"].notnull()
+        df["shift1"] = df["shift1"].fillna(0)
+
+        df[self.make_col_name] = \
+            (df.groupby(self.column)["shift1"].cumsum() + self.initial_weight * self.initial_score) / \
+            (df.groupby(self.column)["notnull"].cumsum() + self.initial_weight)
+        df[self.make_col_name] = df[self.make_col_name].astype("float32")
+        # df[self.make_col_name] = df.groupby(self.column)["answered_correctly"].transform(f).astype("float32")
+        df = df.drop(["shift1", "notnull"], axis=1)
         return df
 
     def partial_predict(self,
@@ -1504,8 +1515,8 @@ class PreviousAnswer2(FeatureFactory):
                     ret.append(w_ret[0])
             return ret
         self.logger.info(f"previous_encoding_all_{self.column}")
-        prev_answer_index = df.groupby("user_id")["content_id"].progress_transform(f).fillna(-99).values
-        prev_answer = df.groupby([self.groupby, "content_id"])["answered_correctly"].shift(1).fillna(-99).values
+        prev_answer_index = df.groupby("user_id")[self.column].progress_transform(f).fillna(-99).values
+        prev_answer = df.groupby([self.groupby, self.column])["answered_correctly"].shift(1).fillna(-99).values
         df[f"previous_answer_index_{self.column}"] = [x if x < self.n else None for x in prev_answer_index]
         df[f"previous_answer_{self.column}"] = [prev_answer[i] if x < self.n else None for i, x in enumerate(prev_answer_index)]
         df[f"previous_answer_index_{self.column}"] = df[f"previous_answer_index_{self.column}"].fillna(-99).astype("int16")
@@ -1536,7 +1547,7 @@ class PreviousAnswer2(FeatureFactory):
             if user_id not in self.data_dict:
                 if is_update:
                     self.data_dict[user_id] = {}
-                    self.data_dict[user_id]["content_id"] = [content_id]
+                    self.data_dict[user_id][self.column] = [content_id]
                     self.data_dict[user_id]["answered_correctly"] = [None]
                     return [None, None]
             last_idx = get_index(self.data_dict[user_id]["content_id"], content_id) # listは逆順になっているので
@@ -1546,7 +1557,7 @@ class PreviousAnswer2(FeatureFactory):
             else:
                 ret = [self.data_dict[user_id]["answered_correctly"][last_idx], last_idx]
             if is_update:
-                self.data_dict[user_id]["content_id"] = [content_id] + self.data_dict[user_id]["content_id"]
+                self.data_dict[user_id][self.column] = [content_id] + self.data_dict[user_id][self.column]
                 self.data_dict[user_id]["answered_correctly"] = [None] + self.data_dict[user_id]["answered_correctly"]
             return ret
 
@@ -1811,7 +1822,7 @@ class QuestionLectureTableEncoder2(FeatureFactory):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
         self.is_debug = is_debug
-        self.make_col_name = f"{self.__class__.__name__}_th{self.min_size}"
+        self.make_col_name = f"{self.__class__.__name__}_th{self.min_size}_past{self.past_n}"
         self.data_dict = {}
         if question_lecture_dict is None:
             if not os.path.isfile(self.question_lecture_dict_path.format(self.min_size)):
@@ -2254,7 +2265,7 @@ class QuestionQuestionTableEncoder2(FeatureFactory):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
         self.is_debug = is_debug
-        self.make_col_name = f"{self.__class__.__name__}_th{self.min_size}"
+        self.make_col_name = f"{self.__class__.__name__}_th{self.min_size}_past{self.past_n}"
         self.data_dict = {}
         if question_lecture_dict is None:
             if not os.path.isfile(self.question_lecture_dict_path.format(self.min_size)):
@@ -2446,6 +2457,226 @@ class QuestionQuestionTableEncoder2(FeatureFactory):
         df["qq_table2_max"] = df["qq_table2_max"].astype("float32")
         df["qq_table2_min"] = df["qq_table2_min"].astype("float32")
         df["qq_table2_last"] = df["qq_table2_last"].astype("float32")
+
+        return df
+
+    def __repr__(self):
+        return self.__class__.__name__
+
+
+class QuestionQuestionTableEncoder3(FeatureFactory):
+    question_lecture_dict_path = "../feature_engineering/question_question3_dict_{}.pickle"
+
+    def __init__(self,
+                 past_n: int,
+                 min_size: int=1000,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 question_lecture_dict: Union[Dict[tuple, float], None] = None,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
+        self.past_n = past_n
+        self.min_size = min_size
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.make_col_name = f"{self.__class__.__name__}_th{self.min_size}_past{self.past_n}"
+        self.data_dict = {}
+        if question_lecture_dict is None:
+            if not os.path.isfile(self.question_lecture_dict_path.format(self.min_size)):
+                print("make_new_dict")
+                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
+                df = pd.concat([pd.read_pickle(f).head(2_000_000).sort_values(["user_id", "timestamp"])[
+                                    ["user_id", "content_id", "content_type_id", "user_answer", "answered_correctly"]] for f in files])
+                print("loaded")
+                self.make_dict(df)
+            with open(self.question_lecture_dict_path.format(self.min_size), "rb") as f:
+                self.question_lecture_dict = pickle.load(f)
+        else:
+            self.question_lecture_dict = question_lecture_dict
+
+    def make_dict(self,
+                  df: pd.DataFrame,
+                  test_mode: bool = False,
+                  output_dir: str = None):
+        """
+        question_lecture_dictを作って, 所定の場所に保存する
+        :param df:
+        :param is_output:
+        :return:
+        """
+
+        if test_mode:
+            # test_code用
+            questions = df[df["content_type_id"] == 0]["content_id"].drop_duplicates()
+        else:
+            df_question = pd.read_csv("../input/riiid-test-answer-prediction/questions.csv",
+                                      dtype={"bundle_id": "int32",
+                                             "question_id": "int32",
+                                             "correct_answer": "int8",
+                                             "part": "int8"})
+
+            questions = df_question["question_id"].drop_duplicates().values
+
+        ret_dict = {}
+        df["past_answered"] = (df.groupby(["user_id", "content_id"]).cumcount() > 0).astype("uint8")
+        df = df[df["content_type_id"] == 0]
+        for lecture in tqdm.tqdm(questions, desc="make_dict..."):
+            for ans in [1, 2, 3, 4]:
+                df["lectured_flg"] = \
+                    (df["content_id"] == lecture).astype("uint8") * (df["user_answer"] == ans).astype("uint8")
+                df["lectured"] = df.groupby(["user_id"])["lectured_flg"].shift(1)
+                df["lectured"] = (df.groupby("user_id")["lectured"].cumsum() > 0).astype("uint8")
+                group = df[df["lectured"] == 1].groupby(["content_id", "past_answered"])["answered_correctly"]
+                w_dict_sum = group.sum().to_dict()
+                w_dict_size = group.size().to_dict()
+                for keys in w_dict_sum.keys():
+                    if w_dict_size[keys] > self.min_size:
+                        question = keys[0]
+                        past_answered = keys[1]
+                        answered_correctly = ans
+                        score = w_dict_sum[keys] / w_dict_size[keys]
+                        ret_dict[(lecture, question, past_answered, answered_correctly)] = score
+
+        if output_dir is None:
+            output_dir = self.question_lecture_dict_path.format(self.min_size)
+        with open(output_dir, "wb") as f:
+            pickle.dump(ret_dict, f)
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
+        group = df[df["content_type_id"] == 0].groupby("user_id")
+        for user_id, w_df in group[["content_id", "user_answer"]]:
+            if user_id not in self.data_dict:
+                self.data_dict[user_id] = {}
+                for col in ["content_id", "user_answer"]:
+                    self.data_dict[user_id][col] = w_df[col].values.tolist()[-self.past_n:]
+            else:
+                for col in ["content_id", "user_answer"]:
+                    self.data_dict[user_id][col] = (self.data_dict[user_id][col] + w_df[col].values.tolist())[-self.past_n:]
+        return self
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"question_question_table_encode")
+        def f(w_df):
+            def make_list(series):
+                ret = []
+                w_ret = []
+                for x in series.values:
+                    if not np.isnan(x):
+                        w_ret.append(x)
+                    ret.append(w_ret[-self.past_n:])
+                return ret
+
+            def calc_score(content_id, past_answer, lectures, answered_correctlies):
+                score = []
+                for lec, answered_correctly in zip(lectures, answered_correctlies):
+                    if (lec, content_id, past_answer, answered_correctly) in self.question_lecture_dict:
+                        score.append(self.question_lecture_dict[(lec, content_id, past_answer, answered_correctly)])
+                return score[-self.past_n:]
+
+            lectures = []
+            answered_correctlies = []
+            scores = []
+
+            for x in w_df[["content_id", "content_type_id", "previous_answer_content_id", "user_answer"]].values:
+                content_id = x[0]
+                content_type_id = x[1]
+                if x[2] < 0:
+                    past_answer = 0
+                else:
+                    past_answer = 1
+                answered_correctly = x[3]
+
+                if content_type_id == 1:
+                    scores.append([np.nan])
+                else:
+                    scores.append(calc_score(content_id=content_id,
+                                             past_answer=past_answer,
+                                             lectures=lectures,
+                                             answered_correctlies=answered_correctlies))
+                    lectures.append(content_id)
+                    lectures = lectures[-self.past_n:]
+                    answered_correctlies.append(answered_correctly)
+                    answered_correctlies = answered_correctlies[-self.past_n:]
+
+            return scores
+        self.logger.info(f"qq_score3_encoding")
+
+        df_rets = []
+        for key, w_df in tqdm.tqdm(df.groupby("user_id")):
+            score = f(w_df)
+            df_ret = pd.DataFrame(index=w_df.index)
+            expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
+            expect_sum = [np.array(x).sum() if len(x) > 0 else np.nan for x in score]
+            expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
+            expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
+            expect_last = [x[-1] if len(x) > 0 else np.nan for x in score]
+            df_ret["qq_table3_mean"] = expect_mean
+            df_ret["qq_table3_sum"] = expect_sum
+            df_ret["qq_table3_max"] = expect_max
+            df_ret["qq_table3_min"] = expect_min
+            df_ret["qq_table3_last"] = expect_last
+
+            df_rets.append(df_ret)
+
+        df_rets = pd.concat(df_rets).sort_index()
+
+        for col in df_rets.columns:
+            df[col] = df_rets[col].astype("float32")
+
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        def calc_score(x):
+            user_id = x[0]
+            content_id = x[1]
+            content_type_id = x[2]
+            if x[3] < 0:
+                past_answer = 0
+            else:
+                past_answer = 1
+
+            if content_type_id == 1:
+                return [np.nan]
+            if user_id not in self.data_dict:
+                return [np.nan]
+            list_lectures = self.data_dict[user_id]["content_id"]
+            list_answered_correctly = self.data_dict[user_id]["user_answer"]
+            score = []
+            for lec, answered_correctly in zip(list_lectures, list_answered_correctly):
+                if (lec, content_id, past_answer, answered_correctly) in self.question_lecture_dict:
+                    score.append(self.question_lecture_dict[(lec, content_id, past_answer, answered_correctly)])
+            return score
+
+        score = [calc_score(x) for x in df[["user_id", "content_id", "content_type_id", "previous_answer_content_id"]].values]
+        expect_mean = [np.array(x).mean() if len(x) > 0 else np.nan for x in score]
+        expect_sum = [np.array(x).sum() if len(x) > 0 else np.nan for x in score]
+        expect_max = [np.array(x).max() if len(x) > 0 else np.nan for x in score]
+        expect_min = [np.array(x).min() if len(x) > 0 else np.nan for x in score]
+        expect_last = [x[-1] if len(x) > 0 else np.nan for x in score]
+        df["qq_table3_mean"] = expect_mean
+        df["qq_table3_sum"] = expect_sum
+        df["qq_table3_max"] = expect_max
+        df["qq_table3_min"] = expect_min
+        df["qq_table3_last"] = expect_last
+
+        df["qq_table3_mean"] = df["qq_table3_mean"].astype("float32")
+        df["qq_table3_sum"] = df["qq_table3_sum"].astype("float32")
+        df["qq_table3_max"] = df["qq_table3_max"].astype("float32")
+        df["qq_table3_min"] = df["qq_table3_min"].astype("float32")
+        df["qq_table3_last"] = df["qq_table3_last"].astype("float32")
 
         return df
 
@@ -3038,7 +3269,7 @@ class UserAnswerLevelEncoder(FeatureFactory):
         self.logger = logger
         self.is_partial_fit = is_partial_fit
         self.is_debug = is_debug
-        self.make_col_name = self.__class__.__name__
+        self.make_col_name = f"{self.__class__.__name__}_past{self.past_n}"
         self.data_dict = {}
         if user_answer_dict is None:
             if not os.path.isfile(self.user_answer_dict_path):
@@ -3514,6 +3745,10 @@ class ElapsedTimeVsShiftDiffEncoder(FeatureFactory):
                         is_update: bool=True):
         return self._predict(df)
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+
 class Word2VecEncoder(FeatureFactory):
 
     def __init__(self,
@@ -3973,6 +4208,7 @@ class FeatureFactoryManager:
                     else:
                         df = factory.all_predict(df)
                     df = factory.make_feature(df)
+                    self.logger.info(factory)
                     factory.fit(df=df,
                                 feature_factory_dict=self.feature_factory_dict,
                                 is_first_fit=is_first_fit)
@@ -3983,6 +4219,7 @@ class FeatureFactoryManager:
 
             for factory in dicts.values():
                 if not factory.is_partial_fit:
+                    self.logger.info(factory)
                     factory.fit(df=df,
                                 feature_factory_dict=self.feature_factory_dict,
                                 is_first_fit=is_first_fit)
@@ -4024,12 +4261,14 @@ class FeatureFactoryManager:
         for dicts in self.feature_factory_dict.values():
             for factory in dicts.values():
                 if factory.is_partial_fit:
+                    self.logger.info(factory)
                     df = factory.partial_predict(df)
 
         # partial_predictなし
         for dicts in self.feature_factory_dict.values():
             for factory in dicts.values():
                 if not factory.is_partial_fit:
+                    self.logger.info(factory)
                     df = factory.partial_predict(df)
 
         return df

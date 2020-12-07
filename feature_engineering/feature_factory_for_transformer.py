@@ -6,6 +6,11 @@ import pickle
 import tqdm
 import glob
 from logging import Logger
+import copy
+
+def calc_sec(x, max_sec=300):
+    ret = x//1000
+    return np.min([ret, max_sec])
 
 class FeatureFactoryForTransformer:
     def __init__(self,
@@ -13,7 +18,7 @@ class FeatureFactoryForTransformer:
                  dict_path: str,
                  sequence_length: int,
                  logger: Logger,
-                 embbed_dict: Dict[Union[str, int, tuple], int] = None):
+                 embbed_dict: Dict[Union[str, int, tuple], int] = {}):
         self.dict_path = dict_path
         self.column_config = column_config
         self.embbed_dict_path = dict_path
@@ -45,29 +50,28 @@ class FeatureFactoryForTransformer:
                 self.index_dict[key] = [self.target_cols.index(x) for x in key]
 
     def make_dict(self):
-        if self.dict_path is not None:
-            df = None
-            for key, value in self.column_config.items():
-                if value["type"] == "category":
-                    dict_dir = f"{self.dict_path}/{key}_for_transformer.pickle"
-                    if not os.path.isfile(dict_dir):
-                        if df is None:
-                            print("make_new_dict")
-                            files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
-                            target_cols = []
-                            for k in self.column_config.keys():
-                                if type(k) == str:
-                                    target_cols.append(k)
-                                else: # tuple
-                                    target_cols.extend(list(k))
+        df = None
+        for key, value in self.column_config.items():
+            if value["type"] == "category":
+                dict_dir = f"{self.dict_path}/{key}_for_transformer.pickle"
+                if not os.path.isfile(dict_dir):
+                    if df is None:
+                        print("make_new_dict")
+                        files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
+                        target_cols = []
+                        for k in self.column_config.keys():
+                            if type(k) == str:
+                                target_cols.append(k)
+                            else: # tuple
+                                target_cols.extend(list(k))
 
-                            df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[target_cols] for f in files])
-                            print("loaded")
-                        self.make_dict(df=df, column=key, output_dir=dict_dir)
-                    with open(dict_dir, "rb") as f:
-                        self.embbed_dict[key] = pickle.load(f)
-                else:
-                    raise NotImplementedError
+                        df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[target_cols] for f in files])
+                        print("loaded")
+                    self._make_dict(df=df, column=key, output_dir=dict_dir)
+                with open(dict_dir, "rb") as f:
+                    self.embbed_dict[key] = pickle.load(f)
+            else:
+                raise NotImplementedError
 
 
     def _make_dict(self,
@@ -147,7 +151,7 @@ class FeatureFactoryForTransformer:
                 ret_dict = {x: [] for x in self.index_dict.keys()}
                 ret_dict["answered_correctly"] = []
             else:
-                ret_dict = self.data_dict[user_id]
+                ret_dict = copy.copy(self.data_dict[user_id])
 
             for key, index in self.index_dict.items():
                 if type(key) == tuple:

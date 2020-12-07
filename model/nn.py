@@ -50,14 +50,21 @@ def train_nn_cv(df: pd.DataFrame,
     train_idx = []
     val_idx = []
     np.random.seed(0)
+    np.random.seed(0)
     for _, w_df in df.groupby("user_id"):
-        train_num = (np.random.random(len(w_df)) < 0.8).sum()
-        train_idx.extend(w_df[:train_num].index.tolist())
-        val_idx.extend(w_df[train_num:].index.tolist())
+        if np.random.random() < 0.1:
+            # all val
+            val_idx.extend(w_df.index.tolist())
+        else:
+            train_num = int(len(w_df) * 0.9)
+            train_idx.extend(w_df[:train_num].index.tolist())
+            val_idx.extend(w_df[train_num:].index.tolist())
+
     if is_debug:
         epochs = 3
     else:
         epochs = 1000
+
     model.fit(df[features].iloc[train_idx].values, df["answered_correctly"].iloc[train_idx].values.reshape(-1, 1),
               batch_size=2**17,
               epochs=epochs,
@@ -89,3 +96,4 @@ def train_nn_cv(df: pd.DataFrame,
     df_oof["target"] = df.iloc[val_idx]["answered_correctly"].values
 
     df_oof.to_csv(f"{output_dir}/oof_{model_id}_nn.csv", index=False)
+

@@ -559,7 +559,132 @@ kaggle datasets version -p riiid_code/ --dir-mode "zip" -m "test"
 * ex_140: QQTable2 + QQTable -> CV: 0.7902 (QQTableは全データを使っているのに対し、QQTable2はmodel0の300万件しか使ってない
   * QQTable2を採用する(ex_139)
 * ex_141: ex_139 - diff-diff -> CV: 0.7901
-* ex_142: 不必要なcolumn削る
+
+# 2020/11/28
+## experiments
+* ex_142: 意外とtagsが効いてない…けしてみる -> CV: 0.7899 (これくらいなら消すか)
+* ex_143: QuestionTable消し忘れてた -> CV: 0.7891
+* ex_144: ex_143 + lr=0.1 CV: 0.7914(model0)
+
+## other
+* transformer programming
+  * positional embedding: これって何問目?も大事な気がしている。つねに「最新」を0とするのでいいんだろうか
+
+# 2020/11/29
+## experiments
+* ex_146: ex_144 - meanagg_elapsedtime (メモリ節約!) lr=0.3 -> CV: 0.7890
+* ex_147: ex_146 - CategoryLevelEnc -> CV: 0.7885
+* ex_148: ex_146 - PreviousAnswer2(n=300) -> CV: 0.7888
+* ex_149: ex_148 - PastTimestamp n=50を消す -> CV: 0.7885
+* ex_150: ex_148 - PastTimestamp n=[5, 20] -> CV: 0.7888
+* ex_151: ex_150 + lr=0.1 -> CV: 0.7909(model1)
+
+# 2020/11/30
+## eriments
+* ex_153: ex_151 + bugfix -> CV* 0.7884??
+  * (Counter [0, 1] => [-1, 0, 1]に変更 ->
+* ex_154: ex_153 - Counter(処理が追いつかないので…) -> CV: 0.7885
+* ex_155: ex_154 - user_count_bin -> CV: 0.7886
+* ex_156: ex_155 - prior_question_elapsed_time_bin -> CV: 0.7886
+* ex_157: user_answer_ratioをやってみる -> CV: 0.7891(+0.0005!)
+  * ただ、ans1の順位が高いが、これはtarget encoding(content_id)と同値。。
+  * ans2~4は全然だめ
+* ex_158: ex_156 + Past1ContentTypeId, Past1Part(が一緒かどうか) -> 0.7886
+* ex_159: past_n_content_type_id sum (過去N回で何回lecture受けたか?) -> 0.7887
+* ex_160: prev_3_ans -> prev_5_ans -> 0.7888
+* ex_161: ex_160 + paramtuned (ex_152) -> 0.7897 (だけどepoch1500で1h/model）
+* ex_162: ex_160 -> reg_alpha/reg_lambda 500 -> 0.7886
+* ex_163: ex_160 + reg_alpha/reg_lambda 200 -> 0.7892
+* ex_164: ex_160 + reg_alpha40 reg_lambda200 -> 0.7888
+* ex_165: ex_163 + lr=0.1 -> CV: 0.7911(model1) LB: 0.795
+
+# 2020/12/1
+* ex_166: (user_id, content_id)のtarget encoding -> 0.7898 (+0.01)
+* ex_167: ex_166+(user_id, content_id) + countencoding -> 0.7900 (+0.002)
+* ex_168: (user_id, question_id)-te/ce -> 0.7901 (+0.003)
+* ex_169: content_id -> question_id -> 0.7901 (+0.003)
+* ex_170: ex_163 + task_container_id
+* ex_171: ex_163 + dart -> 0.7907/2000epoch
+* ex_172: ql_table dictsize=300 lr=0.3 -> CV: 0.7885(-0.016)　LB: 0.795
+
+# 2020/12/2
+* transformer
+  * アンサンブルしたらヤバイ・・・・！！！ -> 勘違い
+  * ![image_47](image_47.png)
+
+## experiment
+[0.7885のlgbmとぶつける]
+* model001: 再現性の確保, 10Mrow -> CV: 0.7374
+* model002: max_len刻みにデータを取る -> CV: 0.7597
+* model003: max_len=50 -> CV: 0.7581 ensemble-lgbm 0.7906(+0.002)
+* model004: max_len=25 -> CV: 0.7562 ensemble-lgbm 0.7927(+0.004!?)
+* model005: max_len=10 -> CV: 0.7515 ensemble-lgbm 0.7972(+0.01!?!?!?)
+* model006: add part max_len=25 -> model007で実験!
+* model007: model006 いろいろ組み合わせ -> CV: 0.761 enxemble 0.798(vs model5)
+  * max: embed_dim=256, max_seq=10 CV: 0.772/embenble: 0.807
+しばらくtransformerと心中しますか…。ベースライン出してから
+
+# 2020/12/3
+## experiment
+* ex_173: ex_172 + lr=0.1
+* model007の一番うしろのコレを、n_skill消した形で表現する?
+  * あー！正解/不正解を表現しているということか！！
+  * ![image_48](image_48.png)
+* model009: model008で一番良かったやつをfullmodel! ... メモリーエラーになるので
+* model010: model009 head_30m
+
+# 2020/12/4
+* model011/model012: bugcheck
+* model014: add lecture_id -> CV: 0.778(+0.006) eesnmble: 0.813(+0.006)
+
+# 2020/12/5
+## experiment
+* model015: bugcheck.-> OK! all_predict vs partial_predict
+* model016: model014 + user_answer: CV: 0.7890...あれ..
+* model016まで、valがtrainに含まれていた。。実験やり直し。。
+
+* model018: model007と同じ実験。。(epochs=6)
+  * emb=128, seq=100, epoch=12 -> CV: 0.753; emb=128->256: CV 0.750(overfit...)
+* model019: model018 + user_answerとか CV: 0.753(かわらず)
+* model020: scheduler + AdamW lr=1e-4: underfitting lr=1e-3でもだめ
+* model023: lag_time, timediff -> CV: 0.753(same)
+* model024: model023 + batch_size=64 lr=3e-4
+* model025: positional encoding. -> 失敗
+* model026: positional encoding(decode) -> CV: 0.756
+* model028: all data! -> CV: 0.7723.
+
+* ex_174: part1-7 mean -> CV: 0.7887(+0.0002)
+* ex_175: elapsed_time<=1000の件数カウント -> CV: 0.7887
+# 2020/12/6
+## experiment
+* ex_178: past_useranswer+content_id_te -> CV: 0.7889
+* ex_179: ex_178 + prev_ans_te iroiro -> CV: 0.7886
+* ex_180: user_rate int -> float -> CV: 0.7888
+* ex_181: 一回特徴全部作り直してみる -> CV: 0.7886 (PreviousAnswer500->300にしたのが更新されてなかったんだろうな)
+* ex_182: UserAnswerLevelEncoderを導入(なぜかもれてた) -> CV: 0.7889(+0.0003)
+* ex_183: past_useranswer_te minsize=300=>150 -> 0.7889
+* ex_184: is_first_sessionを入れて、prior_question_had_explanationを消す -> 0.7888
+* ex_185: userans_count_ratio: CV: 0.7890
+* ex_186: elapsed_time<1000 count -> CV: 0.7889
+* ex_187: timediff_elapsed
+* ex_188: NN 256-128 -> CV: 0.7852 ensemble 0.7894
+* ex_189: NN 512-256 -> CV: 0.7864 ensemble 0.7897
+* ex_190: make_data_only
+
+## EDA
+* 037_postprocess あんまり意味なかった
+* 041_１個前の問題の回答(QQ_tableをめちゃくちゃシンプルに)
+  * ![image_49](image_49.png)
+  * また、僕のモデルは、「間違ったか正しかったか」でしか判定していない。コレは効くはず。
+    * ![image_50](image_50.png)
+* 042_user_answer_pickle_check
+  * min_size=300だと、prev_dictは18000くらい... -> min_size=150で再度試す
+
+* 043_user_answer_statistics
+  * ![image_51](image_51.png)
+
+# 2020/12/7
+* ex_191: past5 contentid/user_answerをshift1~5してanswer mean
 </div>
 
 
