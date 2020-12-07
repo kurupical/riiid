@@ -82,6 +82,7 @@ def get_model(input_len,
               reg,
               hidden1,
               hidden2,
+              hidden3,
               dropout
               ):
     model = Sequential()
@@ -96,7 +97,12 @@ def get_model(input_len,
                     kernel_regularizer=regularizers.l2(reg),
                     activity_regularizer=regularizers.l2(reg)))
     model.add(PReLU())
-    model.add(Dropout(dropout))
+    model.add(Dropout(dropout/2))
+    model.add(Dense(hidden3,
+                    kernel_regularizer=regularizers.l2(reg),
+                    activity_regularizer=regularizers.l2(reg)))
+    model.add(PReLU())
+    model.add(Dropout(dropout/4))
     model.add(Dense(1, activation="sigmoid"))
 
     model.compile(loss="binary_crossentropy",
@@ -228,13 +234,14 @@ for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
     print(df.shape)
     df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_5_ans"], axis=1)
 
-    for hidden in [1024]:
+    for hidden in [512]:
         for dropout in [0.2]:
             for reg in [1e-6]:
                 params = {
                     "input_len": len(df.columns) - 2, # 2: answered_correctly, user_id
                     "hidden1": hidden,
-                    "hidden2": hidden/2,
+                    "hidden2": hidden/4,
+                    "hidden3": hidden/16,
                     "dropout": dropout,
                     "reg": reg
                 }

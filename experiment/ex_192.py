@@ -32,10 +32,10 @@ from feature_engineering.feature_factory import \
     PastNFeatureEncoder, \
     PreviousContentAnswerTargetEncoder
 
-from experiment.common import get_logger
+from experiment.common import get_logger, total_size
 import pandas as pd
-from model.lgbm import train_lgbm_cv
-from model.nn import train_nn_cv
+from model.lgbm import train_lgbm_cv, train_lgbm_cv_newuser
+from model.cboost import train_catboost_cv
 from sklearn.model_selection import KFold
 from datetime import datetime as dt
 import numpy as np
@@ -44,66 +44,33 @@ import glob
 import time
 import tqdm
 import pickle
-from tensorflow.keras.models import Model, Sequential, load_model
-from tensorflow.keras.layers import Dense, Dropout, ReLU, BatchNormalization, Input, Add, PReLU
-from tensorflow.keras.optimizers import Adam, SGD
-import tensorflow.keras
-from tensorflow.keras.models import Model, Sequential, load_model
-from tensorflow.keras.layers import Dense, Dropout, ReLU, BatchNormalization, Input, Add, PReLU
-from tensorflow.keras import regularizers
-import random
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-
 from sklearn.metrics import roc_auc_score
-import mlflow
+import warnings
+
+
+warnings.filterwarnings("ignore")
+pd.set_option("max_rows", 100)
 
 output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
+os.makedirs(output_dir, exist_ok=True)
 
 is_debug = False
 wait_time = 0
 if not is_debug:
     for _ in tqdm.tqdm(range(wait_time)):
         time.sleep(1)
-
 def calc_optimized_weight(df):
     best_score = 0
     best_cat_ratio = 0
     for cat_ratio in np.arange(0, 1.05, 0.05):
-        pred = df["nn"] * cat_ratio + df["lgbm"] * (1 - cat_ratio)
+        pred = df["cat"] * cat_ratio + df["lgbm"] * (1 - cat_ratio)
         score = roc_auc_score(df["target"].values, pred)
-        print("[nn_ratio: {:.2f}] AUC: {:.4f}".format(cat_ratio, score))
+        print("[cat_ratio: {:.2f}] AUC: {:.4f}".format(cat_ratio, score))
         if score > best_score:
             best_score = score
             best_cat_ratio = cat_ratio
 
     return best_score, best_cat_ratio
-
-def get_model(input_len,
-              reg,
-              hidden1,
-              hidden2,
-              dropout
-              ):
-    model = Sequential()
-    model.add(BatchNormalization())
-    model.add(Dense(hidden1,
-                    kernel_regularizer=regularizers.l2(reg),
-                    activity_regularizer=regularizers.l2(reg),
-                    input_shape=(input_len,)))
-    model.add(PReLU())
-    model.add(Dropout(dropout))
-    model.add(Dense(hidden2,
-                    kernel_regularizer=regularizers.l2(reg),
-                    activity_regularizer=regularizers.l2(reg)))
-    model.add(PReLU())
-    model.add(Dropout(dropout))
-    model.add(Dense(1, activation="sigmoid"))
-
-    model.compile(loss="binary_crossentropy",
-                  optimizer=Adam(),
-                  metrics=tensorflow.keras.metrics.AUC())
-
-    return model
 
 def make_feature_factory_manager(split_num, model_id=None):
     logger = get_logger()
@@ -182,7 +149,7 @@ def make_feature_factory_manager(split_num, model_id=None):
     feature_factory_dict["user_id"]["QuestionQuestionTableEncoder2"] = QuestionQuestionTableEncoder2(model_id=model_id,
                                                                                                      is_debug=is_debug,
                                                                                                      past_n=100,
-                                                                                                     min_size=300)
+                                                                                                     min_size=150)
     feature_factory_dict["user_id"]["UserContentRateEncoder"] = UserContentRateEncoder(column="user_id",
                                                                                        rate_func="elo")
     feature_factory_dict["user_id"]["PreviousContentAnswerTargetEncoder"] = PreviousContentAnswerTargetEncoder(min_size=300)
@@ -202,71 +169,145 @@ def make_feature_factory_manager(split_num, model_id=None):
 for fname in glob.glob("../input/riiid-test-answer-prediction/split10/*"):
     print(fname)
     if is_debug:
-        df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)])
+        df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)]).reset_index(drop=True)
     else:
-        df = pd.read_pickle(fname).sort_values(["user_id", "timestamp"])
+        df = pd.read_pickle(fname).sort_values(["user_id", "timestamp"]).reset_index(drop=True)
     model_id = os.path.basename(fname).replace(".pickle", "")
     df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
     df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
     feature_factory_manager = make_feature_factory_manager(split_num=10, model_id=model_id)
     df = feature_factory_manager.all_predict(df)
-    os.makedirs(output_dir, exist_ok=True)
-
+    params = {
+        'objective': 'binary',
+        'num_leaves': 96,
+        'max_depth': -1,
+        'learning_rate': 0.3,
+        'boosting': 'gbdt',
+        'bagging_fraction': 0.5,
+        'feature_fraction': 0.7,
+        'bagging_seed': 0,
+        'reg_alpha': 200,  # 1.728910519108444,
+        'reg_lambda': 200,
+        'random_state': 0,
+        'metric': 'auc',
+        'verbosity': -1,
+        "n_estimators": 10000,
+        "early_stopping_rounds": 50
+    }
     df.tail(1000).to_csv("exp028.csv", index=False)
-    df = df[df["answered_correctly"].notnull()]
-    df = df.fillna(-1).replace(-99, -1)
 
+    df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_5_ans"], axis=1)
     df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
-    """
-    df = df[["user_id", "answered_correctly", "rating_diff_content_user_id", "qq_table2_last",
-             "rating_diff_content___user_id____part__", "user_id_rating", "te_max", "te_mean",
-             "previous_answer_index_content_id", "diff_mean_shiftdiff_timestamp_by_user_id_cap200k_by___user_id____part__",
-             "diff_mean_shiftdiff_timestamp_by_user_id_cap200k_by_part", "diff_mean_study_time_by___user_id____part__",
-             "past5_timestamp_vslast", ]]
-    """
+    df = df[df["answered_correctly"].notnull()]
     print(df.columns)
     print(df.shape)
-    df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_5_ans"], axis=1)
 
-    for hidden in [1024]:
-        for dropout in [0.2]:
-            for reg in [1e-6]:
-                params = {
-                    "input_len": len(df.columns) - 2, # 2: answered_correctly, user_id
-                    "hidden1": hidden,
-                    "hidden2": hidden/2,
-                    "dropout": dropout,
-                    "reg": reg
-                }
-                model = get_model(**params)
-                print(params)
+    categorical_feature = ["content_id"]
+    print(model_id)
+    train_lgbm_cv_newuser(df,
+                          categorical_feature=categorical_feature,
+                          params=params,
+                          output_dir=output_dir,
+                          model_id=model_id,
+                          exp_name=model_id,
+                          is_debug=is_debug,
+                          drop_user_id=True)
+    params = {
+        'n_estimators': 12000,
+        'learning_rate': 0.1,
+        'eval_metric': 'AUC',
+        'loss_function': 'Logloss',
+        'random_seed': 0,
+        'metric_period': 50,
+        'od_wait': 400,
+        'task_type': 'GPU',
+        'max_depth': 8,
+        "verbose": 100
+    }
+    if is_debug:
+        params["n_estimators"] = 100
+    train_catboost_cv(df,
+                      params=params,
+                      output_dir=output_dir,
+                      model_id=model_id,
+                      exp_name=model_id,
+                      is_debug=is_debug,
+                      cat_features=None,
+                      drop_user_id=True)
 
-                model_id = os.path.basename(fname).replace(".pickle", "")
-                print(model_id)
-                train_nn_cv(df,
-                            model=model,
-                            output_dir=output_dir,
-                            params=params,
-                            model_id=model_id,
-                            exp_name=model_id,
-                            is_debug=is_debug,
-                            drop_user_id=True,
-                            experiment_id=3)
+    df_oof_lgbm = pd.read_csv(f"{output_dir}/oof_{model_id}_lgbm.csv")
+    df_oof_cat = pd.read_csv(f"{output_dir}/oof_{model_id}_catboost.csv")
+    df_oof = pd.DataFrame()
+    df_oof["target"] = df_oof_lgbm["target"]
+    df_oof["lgbm"] = df_oof_lgbm["predict"]
+    df_oof["cat"] = df_oof_cat["predict"]
 
-                df_oof_lgbm = pd.read_csv("../output/ex_172/20201202080625/oof_train_0_lgbm.csv")
-                df_oof_nn = pd.read_csv(f"{output_dir}/oof_{model_id}_nn.csv")
+    score, weight = calc_optimized_weight(df_oof)
+    if is_debug:
+        break
+# fit
+df_question = pd.read_csv("../input/riiid-test-answer-prediction/questions.csv",
+                          dtype={"bundle_id": "int32",
+                                 "question_id": "int32",
+                                 "correct_answer": "int8",
+                                 "part": "int8"})
+df_lecture = pd.read_csv("../input/riiid-test-answer-prediction/lectures.csv",
+                         dtype={"lecture_id": "int32",
+                                "tag": "int16",
+                                "part": "int8"})
+feature_factory_manager = make_feature_factory_manager(split_num=1)
 
-                df_oof = pd.DataFrame()
-                df_oof["target"] = df_oof_lgbm["target"]
-                df_oof["lgbm"] = df_oof_lgbm["predict"]
-                df_oof["nn"] = df_oof_nn["predict"]
 
-                score, weight = calc_optimized_weight(df_oof)
-                mlflow.start_run(experiment_id=11, run_name=model_id)
-                mlflow.log_param("count_row", len(df))
-                mlflow.log_param("count_column", len(df.columns))
-                for k, v in params.items():
-                    mlflow.log_param(k, v)
-                mlflow.log_metric("auc", score)
-                mlflow.log_metric("nn_ratio", weight)
-                mlflow.end_run()
+for i, fname in enumerate(glob.glob("../input/riiid-test-answer-prediction/split10_base/*")):
+    print(fname)
+    model_id = os.path.basename(fname).replace(".pickle", "")
+    data_types_dict = {
+        'row_id': 'int64',
+        'timestamp': 'int64',
+        'user_id': 'int32',
+        'content_id': 'int16',
+        'content_type_id': 'int8',
+        'task_container_id': 'int16',
+        'user_answer': 'int8',
+        'answered_correctly': 'int8',
+    }
+
+    feature_factory_manager.model_id = model_id
+    for column, dicts in feature_factory_manager.feature_factory_dict.items():
+        for factory_name, factory in dicts.items():
+            factory.model_id = model_id
+
+    if is_debug:
+        df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)])
+    else:
+        df = pd.read_pickle(fname).sort_values(["user_id", "timestamp"])
+    df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
+    df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
+    df = pd.concat([pd.merge(df[df["content_type_id"] == 0], df_question,
+                             how="left", left_on="content_id", right_on="question_id"),
+                    pd.merge(df[df["content_type_id"] == 1], df_lecture,
+                             how="left", left_on="content_id", right_on="lecture_id")]).sort_values(
+        ["user_id", "timestamp"]).reset_index(drop=True)
+    # df = feature_factory_manager.feature_factory_dict["content_id"]["TargetEncoder"].all_predict(df)
+    feature_factory_manager.fit(df, is_first_fit=True)
+
+    if i == 0:
+        size = 0
+        for k, v in feature_factory_manager.feature_factory_dict.items():
+            for kk, vv in v.items():
+                try:
+                    w_size = round(total_size(vv.data_dict) / 1_000_000, 2)
+                    print(f"{k}-{vv}: len={len(vv.data_dict)} size={w_size}MB")
+                    size += w_size
+                except Exception as e:
+                    print(f"{k}-{kk} error")
+                    print(e)
+        print(f"-------------------")
+        print(f"total_size={size}MB")
+
+for dicts in feature_factory_manager.feature_factory_dict.values():
+    for factory in dicts.values():
+        factory.logger = None
+feature_factory_manager.logger = None
+with open(f"{output_dir}/feature_factory_manager.pickle", "wb") as f:
+    pickle.dump(feature_factory_manager, f)

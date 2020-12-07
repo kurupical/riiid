@@ -168,7 +168,6 @@ def train_lgbm_cv_newuser(df: pd.DataFrame,
         valid_sets=[train_data, valid_data],
         verbose_eval=100
     )
-    y_oof = model.predict(df.loc[val_idx][features])
     if not is_debug:
         mlflow.log_metric("auc_train", model.best_score["training"]["auc"])
         mlflow.log_metric("auc_val", model.best_score["valid_1"]["auc"])
@@ -186,6 +185,77 @@ def train_lgbm_cv_newuser(df: pd.DataFrame,
     df_oof["target"] = df.loc[val_idx]["answered_correctly"].values
 
     df_oof.to_csv(f"{output_dir}/oof_{model_id}_lgbm.csv", index=False)
+
+def train_lgbm_cv_newuser_alldata(df: pd.DataFrame,
+                                  params: dict,
+                                  output_dir: str,
+                                  model_id: int,
+                                  exp_name: str,
+                                  drop_user_id: bool,
+                                  categorical_feature: list=[],
+                                  experiment_id: int=0,
+                                  is_debug: bool=False):
+
+    if not is_debug:
+        mlflow.start_run(experiment_id=experiment_id, run_name=exp_name)
+
+        mlflow.log_param("model_id", model_id)
+        mlflow.log_param("count_row", len(df))
+        mlflow.log_param("count_column", len(df.columns))
+
+        for key, value in params.items():
+            mlflow.log_param(key, value)
+    if drop_user_id:
+        features = [x for x in df.columns if x not in ["answered_correctly", "user_id"]]
+    else:
+        features = [x for x in df.columns if x not in ["answered_correctly"]]
+    df_imp = pd.DataFrame()
+    df_imp["feature"] = features
+
+    train_idx = []
+    val_idx = []
+    np.random.seed(0)
+    for _, w_df in df.groupby("user_id"):
+        if np.random.random() < 0.01:
+            # all val
+            val_idx.extend(w_df.index.tolist())
+        else:
+            train_num = int(len(w_df) * 0.98)
+            train_idx.extend(w_df[:train_num].index.tolist())
+            val_idx.extend(w_df[train_num:].index.tolist())
+
+    print(f"make_train_data len={len(train_idx)}")
+    train_data = lgb.Dataset(df.loc[train_idx][features],
+                             label=df.loc[train_idx]["answered_correctly"])
+    print(f"make_test_data len={len(val_idx)}")
+    valid_data = lgb.Dataset(df.loc[val_idx][features],
+                             label=df.loc[val_idx]["answered_correctly"])
+
+    model = lgb.train(
+        params,
+        train_data,
+        categorical_feature=categorical_feature,
+        valid_sets=[train_data, valid_data],
+        verbose_eval=100
+    )
+    if not is_debug:
+        mlflow.log_metric("auc_train", model.best_score["training"]["auc"])
+        mlflow.log_metric("auc_val", model.best_score["valid_1"]["auc"])
+        mlflow.end_run()
+
+    df_imp["importance"] = model.feature_importance("gain") / model.feature_importance("gain").sum()
+    df_imp.sort_values("importance", ascending=False).to_csv(f"{output_dir}/imp_{model_id}.csv")
+    with open(f"{output_dir}/model_{model_id}_lgbm.pickle", "wb") as f:
+        pickle.dump(model, f)
+
+    y_oof = model.predict(df.loc[val_idx][features])
+    df_oof = pd.DataFrame()
+    df_oof["row_id"] = df.loc[val_idx].index
+    df_oof["predict"] = y_oof
+    df_oof["target"] = df.loc[val_idx]["answered_correctly"].values
+
+    df_oof.to_csv(f"{output_dir}/oof_{model_id}_lgbm.csv", index=False)
+
 
 def train_lgbm_cv_newuser_with_tta(df: pd.DataFrame,
                                    params: dict,
