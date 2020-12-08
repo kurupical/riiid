@@ -146,7 +146,7 @@ def make_feature_factory_manager(split_num, model_id=None):
                                                                                                    is_debug=is_debug,
                                                                                                    past_n=100,
                                                                                                    min_size=300)
-    feature_factory_dict["user_id"]["QuestionQuestionTableEncoder2"] = QuestionQuestionTableEncoder2(model_id=model_id,
+    feature_factory_dict["user_id"]["QuestionQuestionTableEncoder3"] = QuestionQuestionTableEncoder3(model_id=model_id,
                                                                                                      is_debug=is_debug,
                                                                                                      past_n=100,
                                                                                                      min_size=300)
@@ -210,6 +210,10 @@ print(df.shape)
 df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
 print(model_id)
 model_name = "_".join([str(x) for x in filelist])
+
+df["answered_correctly"] = df["answered_correctly"].astype("float16")
+df["prior_question_elapsed_time"] = df["prior_question_elapsed_time"].astype("int32")
+d
 train_lgbm_cv_newuser_alldata(df,
                               params=params,
                               output_dir=output_dir,

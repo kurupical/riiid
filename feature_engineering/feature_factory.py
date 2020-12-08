@@ -3703,6 +3703,7 @@ class StudyTermEncoder(FeatureFactory):
                  df: pd.DataFrame):
         df["study_time"] = df["shiftdiff_timestamp_by_user_id_cap200k"] - df["prior_question_elapsed_time"]
         df["study_time"] = [x if x < 200000 else -1 for x in df["study_time"].fillna(-99).values]
+        df["study_time"] = df["study_time"].astype("int32")
         return df
 
     def _all_predict_core(self,
