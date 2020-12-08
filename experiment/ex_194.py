@@ -252,6 +252,7 @@ target_col = [
 "answered_correctly",
 "user_id"
 ]
+df = df[target_col]
 print(df.columns)
 print(df.shape)
 df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
