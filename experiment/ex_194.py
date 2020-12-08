@@ -1,3 +1,6 @@
+import sys
+sys.path.append("../")
+
 from feature_engineering.feature_factory import \
     FeatureFactoryManager, \
     TargetEncoder, \
@@ -46,8 +49,6 @@ import tqdm
 import pickle
 from sklearn.metrics import roc_auc_score
 import warnings
-import sys
-sys.path.append("../")
 
 warnings.filterwarnings("ignore")
 pd.set_option("max_rows", 100)
@@ -147,7 +148,7 @@ def make_feature_factory_manager(split_num, model_id=None):
                                                                                                    is_debug=is_debug,
                                                                                                    past_n=100,
                                                                                                    min_size=300)
-    feature_factory_dict["user_id"]["QuestionQuestionTableEncoder3"] = QuestionQuestionTableEncoder3(model_id=model_id,
+    feature_factory_dict["user_id"]["QuestionQuestionTableEncoder3"] = QuestionQuestionTableEncoder2(model_id=model_id,
                                                                                                      is_debug=is_debug,
                                                                                                      past_n=100,
                                                                                                      min_size=300)
