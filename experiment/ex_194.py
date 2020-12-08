@@ -207,6 +207,51 @@ df.tail(1000).to_csv("exp028.csv", index=False)
 
 df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_5_ans"], axis=1)
 df = df[df["answered_correctly"].notnull()]
+
+target_col = [
+'rating_diff_content_user_id',
+'content_id',
+'rating_diff_content___user_id____part__',
+'qq_table2_mean',
+'previous_answer_index_content_id',
+'te_mean',
+'qq_table2_min',
+'diff_mean_shiftdiff_timestamp_by_user_id_cap200k_by___user_id____part__',
+'__user_id____part___rating',
+'previous_answer_content_id',
+'diff_shiftdiff_elapsed_time',
+'diff_mean_study_time_by___user_id____part__',
+'qq_table2_max',
+'diff_mean_shiftdiff_timestamp_by_user_id_cap200k_by_part',
+'diff_mean_study_time_by_part',
+'user_id_rating',
+'ql_table2_min',
+'user_rate_mean_part_5',
+'past5_timestamp_vslast',
+'qq_table2_last',
+'diff_mean_shiftdiff_timestamp_by_user_id_cap200k_by_content_id',
+'shiftdiff_timestamp_by_user_id',
+'shiftdiff_timestamp_by_user_id_cap200k',
+'ql_table2_max',
+'content_rating',
+'diff_mean_shiftdiff_timestamp_by_user_id_cap200k_by_user_id',
+'user_rate_mean_part_2',
+'ql_table2_last',
+'target_enc_user_id',
+'past20_timestamp_vslast',
+'te_min',
+'question_id',
+'mean_study_time_by_content_id',
+'part',
+'study_time',
+'mean_study_time_by_user_id',
+'diff_mean_study_time_by_content_id',
+'prior_question_elapsed_time',
+'mean_study_time_by_part',
+'target_enc_previous_5_ans',
+"answered_correctly",
+"user_id"
+]
 print(df.columns)
 print(df.shape)
 df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
@@ -215,7 +260,7 @@ model_name = "_".join([str(x) for x in filelist])
 
 df["answered_correctly"] = df["answered_correctly"].astype("float16")
 df["prior_question_elapsed_time"] = df["prior_question_elapsed_time"].astype("int32")
-d
+
 train_lgbm_cv_newuser_alldata(df,
                               params=params,
                               output_dir=output_dir,
