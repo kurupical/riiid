@@ -46,7 +46,8 @@ import tqdm
 import pickle
 from sklearn.metrics import roc_auc_score
 import warnings
-
+import sys
+sys.path.append("../")
 
 warnings.filterwarnings("ignore")
 pd.set_option("max_rows", 100)
