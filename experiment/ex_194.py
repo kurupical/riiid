@@ -252,10 +252,10 @@ target_col = [
 "answered_correctly",
 "user_id"
 ]
-df = df[target_col]
 print(df.columns)
 print(df.shape)
 df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
+df = df[target_col]
 print(model_id)
 model_name = "_".join([str(x) for x in filelist])
 
