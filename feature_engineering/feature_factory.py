@@ -3248,6 +3248,56 @@ class UserContentRateEncoder(FeatureFactory):
 
         return df
 
+
+class UserRateBinningEncoder(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = False,
+                 save_feature: bool = False,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.make_col_name = "user_rate_binning"
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return df
+
+    def _predict(self,
+                 df: pd.DataFrame):
+        df["uc_rate"] = (df["user_id_rating"] // 100).astype(str) + "_" + (df["content_rating"] // 100).astype(str) + df["part"].astype(str)
+
+        return df
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"tags_all")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+
+
 class UserAnswerLevelEncoder(FeatureFactory):
     user_answer_dict_path = "../feature_engineering/user_answer_dict.pickle"
 
@@ -3731,6 +3781,8 @@ class ElapsedTimeVsShiftDiffEncoder(FeatureFactory):
                  df: pd.DataFrame):
         df["elapsed_time_content_id"] = [self.elapsed_time_dict[x] for x in df["content_id"].values]
         df["diff_shiftdiff_elapsed_time"] = df["shiftdiff_timestamp_by_user_id_cap200k"] - df["elapsed_time_content_id"]
+        df["elapsed_time_content_id"] = df["elapsed_time_content_id"].astype("int32")
+        df["diff_shiftdiff_elapsed_time"] = df["diff_shiftdiff_elapsed_time"].astype("int32")
         return df
 
     def _all_predict_core(self,
