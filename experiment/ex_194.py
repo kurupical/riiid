@@ -259,7 +259,7 @@ print(model_id)
 model_name = "_".join([str(x) for x in filelist])
 
 df["answered_correctly"] = df["answered_correctly"].astype("float16")
-df["prior_question_elapsed_time"] = df["prior_question_elapsed_time"].astype("int32")
+df["prior_question_elapsed_time"] = df["prior_question_elapsed_time"].astype("float32")
 
 train_lgbm_cv_newuser_alldata(df,
                               params=params,
