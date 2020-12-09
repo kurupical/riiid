@@ -159,6 +159,16 @@ def run(debug,
         df_test_prev_rows += len(df)
         if i < 5:
             df.to_csv(f"{i}.csv")
+        if i == 2:
+            class EmptyLogger:
+                def __init__(self):
+                    pass
+
+                def info(self, s):
+                    pass
+
+            logger = EmptyLogger()
+
 
 if __name__ == "__main__":
     run(debug=True,

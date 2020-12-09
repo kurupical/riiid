@@ -3994,9 +3994,6 @@ class PastNFeatureEncoder(FeatureFactory):
         self.make_col_name = f"{self.__class__.__name__}_{column}_{past_ns}"
         self.data_dict = {}
 
-        if self.remove_now:
-            raise NotImplementedError
-
     def fit(self,
             df: pd.DataFrame,
             feature_factory_dict: Dict[str,
@@ -4018,7 +4015,10 @@ class PastNFeatureEncoder(FeatureFactory):
         for x in series.values:
             if not np.isnan(x):
                 w_ret.append(x)
-            ret.append(w_ret[-self.past_n:])
+            if self.remove_now:
+                ret.append(w_ret[-self.past_n-1:-1])
+            else:
+                ret.append(w_ret[-self.past_n:])
         return ret
 
     def _make_feature(self, df, values):
@@ -4066,10 +4066,16 @@ class PastNFeatureEncoder(FeatureFactory):
             :return:
             """
             if user_id in self.data_dict:
-                ret = (self.data_dict[user_id] + [value])[-self.past_n:]
+                if self.remove_now:
+                    ret = self.data_dict[user_id]
+                else:
+                    ret = (self.data_dict[user_id] + [value])[-self.past_n:]
             else:
-                ret = [value]
-            if is_update:
+                if self.remove_now:
+                    ret = []
+                else:
+                    ret = [value]
+            if is_update and not self.remove_now:
                 self.data_dict[user_id] = ret
             return ret
 
