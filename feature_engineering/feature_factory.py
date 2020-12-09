@@ -4267,7 +4267,6 @@ class FeatureFactoryManager:
                     else:
                         df = factory.all_predict(df)
                     df = factory.make_feature(df)
-                    self.logger.info(factory)
                     factory.fit(df=df,
                                 feature_factory_dict=self.feature_factory_dict,
                                 is_first_fit=is_first_fit)
@@ -4278,7 +4277,6 @@ class FeatureFactoryManager:
 
             for factory in dicts.values():
                 if not factory.is_partial_fit:
-                    self.logger.info(factory)
                     factory.fit(df=df,
                                 feature_factory_dict=self.feature_factory_dict,
                                 is_first_fit=is_first_fit)
@@ -4320,14 +4318,12 @@ class FeatureFactoryManager:
         for dicts in self.feature_factory_dict.values():
             for factory in dicts.values():
                 if factory.is_partial_fit:
-                    self.logger.info(factory)
                     df = factory.partial_predict(df)
 
         # partial_predictなし
         for dicts in self.feature_factory_dict.values():
             for factory in dicts.values():
                 if not factory.is_partial_fit:
-                    self.logger.info(factory)
                     df = factory.partial_predict(df)
 
         return df
