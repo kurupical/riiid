@@ -240,7 +240,6 @@ target_col = [
 'target_enc_user_id',
 'past20_timestamp_vslast',
 'te_min',
-'question_id',
 'mean_study_time_by_content_id',
 'part',
 'study_time',

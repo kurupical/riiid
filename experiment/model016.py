@@ -373,7 +373,7 @@ def main(params: dict):
 
 
 if __name__ == "__main__":
-    for embed_dim in [64, 128, 256]:
+    for embed_dim in [256]:
         for max_seq in [10]:
             params = {"embed_dim": embed_dim,
                       "max_seq": max_seq,
