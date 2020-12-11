@@ -4186,7 +4186,7 @@ class PreviousContentAnswerTargetEncoder(FeatureFactory):
                 prev_user_answer = self.data_dict[user_id][1]
                 key = (content_id, prev_content_id, prev_user_answer)
                 if key in self.prev_dict:
-                    return self.predict[key]
+                    return self.prev_dict[key]
                 else:
                     return np.nan
             else:
