@@ -3002,7 +3002,7 @@ def simple_diff(rate1, rate2):
     diff = 16 + int((rate1 - rate2) * 0.04)
     return -diff, diff
 
-def elo_rating(rate1, rate2, k=15):
+def elo_rating(rate1, rate2, k=32):
     """ rate1: lose player's rate, rate2: win player's rate """
     expect_win_1 = 1 / (1 + 10**(-(rate1 - rate2)/400))
     diff_1 = k * (0 - expect_win_1)
