@@ -3207,7 +3207,7 @@ class UserContentRateEncoder(FeatureFactory):
                              answered_correctly=answered_correctly)
             return ret
 
-        df["content_rating"] = [self.content_rate_dict[x[0]] if x[1] == 0 else -1
+        df[f"content_rating_{self.column}"] = [self.content_rate_dict[x[0]] if x[1] == 0 else -1
                               for x in df[["content_id", "content_type_id"]].values]
         if type(self.column) == str:
             keys = df[self.column].values
@@ -3215,9 +3215,9 @@ class UserContentRateEncoder(FeatureFactory):
             keys = [tuple(x) for x in df[self.column].values]
         df[f"{self.column}_rating"] = [f(key, x[0], x[1], x[2]) for key, x in zip(keys, df[["content_id", "content_type_id", "answered_correctly"]].values)]
 
-        df["content_rating"] = df["content_rating"].astype("int16")
+        df[f"content_rating_{self.column}"] = df[f"content_rating_{self.column}"].astype("int16")
         df[f"{self.column}_rating"] = df[f"{self.column}_rating"].astype("int16")
-        df[f"rating_diff_content_{self.column}"] = df["content_rating"] - df[f"{self.column}_rating"]
+        df[f"rating_diff_content_{self.column}"] = df[f"content_rating_{self.column}"] - df[f"{self.column}_rating"]
         return df
 
     def partial_predict(self,
@@ -3240,11 +3240,11 @@ class UserContentRateEncoder(FeatureFactory):
             keys = [tuple(x) for x in df[self.column].values]
 
         df[f"{self.column}_rating"] = [f(key, x[0], x[1]) for key, x in zip(keys, df[["content_id", "content_type_id"]].values)]
-        df["content_rating"] = [self.content_rate_dict[x[0]] if x[1] == 0 else -1
+        df[f"content_rating_{self.column}"] = [self.content_rate_dict[x[0]] if x[1] == 0 else -1
                                 for x in df[["content_id", "content_type_id"]].values]
-        df["content_rating"] = df["content_rating"].astype("int16")
+        df[f"content_rating_{self.column}"] = df[f"content_rating_{self.column}"].astype("int16")
         df[f"{self.column}_rating"] = df[f"{self.column}_rating"].astype("int16")
-        df[f"rating_diff_content_{self.column}"] = df["content_rating"] - df[f"{self.column}_rating"]
+        df[f"rating_diff_content_{self.column}"] = df[f"content_rating_{self.column}"] - df[f"{self.column}_rating"]
 
         return df
 

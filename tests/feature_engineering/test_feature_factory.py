@@ -1698,7 +1698,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
         rate = u1_rate + u2_rate
 
         df_expect = pd.DataFrame({
-            "content_rating": [1700, 1600, np.nan, 1500, 1400, 1700, 1600, 1500],
+            "content_rating_user_id": [1700, 1600, np.nan, 1500, 1400, 1700, 1600, 1500],
             "user_id_rating": rate
         })
 
@@ -1716,7 +1716,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
                            "content_type_id": [0, 0, 0, 0, 1]})
 
         df_expect = pd.DataFrame({
-            "content_rating": [1700, 1600, 1700, 1600, np.nan],
+            "content_rating_user_id": [1700, 1600, 1700, 1600, np.nan],
             "user_id_rating": [1537, 1464, 1464, 1500, np.nan]
         })
 
@@ -1837,7 +1837,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
         rate = u1_rate + u2_rate
 
         df_expect = pd.DataFrame({
-            "content_rating": [1700, 1600, np.nan, 1500, 1400, 1700, 1600, 1500],
+            "content_rating_['user_id', 'part']": [1700, 1600, np.nan, 1500, 1400, 1700, 1600, 1500],
             "['user_id', 'part']_rating": rate
         })
 
@@ -1856,7 +1856,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
                            "content_type_id": [0, 0, 0, 0, 1]})
 
         df_expect = pd.DataFrame({
-            "content_rating": [1700, 1600, 1700, 1600, np.nan],
+            "content_rating_['user_id', 'part']": [1700, 1600, 1700, 1600, np.nan],
             "['user_id', 'part']_rating": [1537, 1464, 1464, 1500, np.nan]
         })
 
