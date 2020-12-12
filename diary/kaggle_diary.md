@@ -684,7 +684,74 @@ kaggle datasets version -p riiid_code/ --dir-mode "zip" -m "test"
   * ![image_51](image_51.png)
 
 # 2020/12/7
+## experiment
 * ex_191: past5 contentid/user_answerをshift1~5してanswer mean
+* ex_196: ex_182 + session再度やる -> CV: 0.7890
+* ex_197: NN fillna-mean -> 処理時間長いので…
+* ex_198: user_rate/content_rate binning
+* model029: model016 + seq10
+
+## EDA
+* 045_user-content_rate
+  * ![image_52](image_52.png
+
+# 2020/12/8
+## Experiment
+* model030
+  * encoderにselfattention追加 -> 全然かわらない
+* ex_202: lecture受けた + prior_question_had_explanationを合体してtargetenc
+## EDA
+* 048_container_id
+  * なんかバグってる?データがあるっぽい。container_id~0なのに過去の情報があるような…
+  * ![image_53](image_53.png)
+* 049_lectured
+  * lecture受けた件数とprior_question_had_explanationでgroupbyすると結構乖離がある
+  * ![image_54](image_54.png)
+
+# 2020/12/9
+## experiment
+* ex_203: QQ2+QQ3 -> CV: 0.7893
+* ex_205: timestampをtask_container_id  -> 変化なし
+* ex_206: 重そうな特徴削除 -> CV: 0.7886
+* ex_207: 重いデータ消す+final_lec_idx -> 0.7886
+* ex_208: ex_207からQLtable2削除(leakしてないか?) -> 0.7881
+* ex_209: ex_208 - final_lec_idx (final_lec_idx単体の評価 -> 0.7880
+* ex_210: ex_209 - QQtableも消してみるか。。　-> 0.7865
+* ex_211: ex_207 - QQtable(QLtableだけ残す版) -> 0.7880
+=> 実はQLTable要らなかったのでは(むしろoverfitするから害悪まであるe ex_209）
+* model032: 出力をseq_len -> 1に変更
+
+# 2020/12/10
+## experiment
+* model035: attentionバグってたので修正。→予測時間がタイムオーバー
+* model036: attentionバグ修正してmodel034 -> 全然変わらず
+* model037: ?
+* model038: ?
+* model039: model029(base)にatt_output治した(e, x, x -> e, e, x), skipconnection
+* ex_212: prev_user_answer, prev_content_id で groupby user_id_rating -> CV: 0.7877
+
+* model041: user_answerまで反映するのを止める auc-val 0.7696(!=cv)
+* model042: model041 + model0 -> だめ
+* model043: x, eにlayer_normalつける、eにpositional_encodingつける、FFNとか場所かえる
+* model044: enc/decにselfattentionつける
+* model045: selfattention*2
+* model046: model045をいろいろ
+
+# 2020/12/11
+* ex_214: rating tags -> CV: 0.7882
+* ex_215: ex_214 + QLTableEncoderふっかつ -> CV: 0.7890!　だけど、user_id+tagだとメモリ6GBなんでだめ
+* ex_216: ex_215 - ex_214 + tags clustering 20 TE -> CV: 0.7887
+* ex_217: tags+part(partは３で割って距離をましにする) clustering 10 TE -> CV: 0.7887
+* ex_218: tags+part(/3) clustering 20 TE => CV: 0.7888
+* ex_219: tags+part clustering 20 TE => CV: 0.7888
+* ex_220: ex_219 + rating bugfix(content_ratingが上書きされていた) -> CV: 0.7885...
+* ex_222: bugfixもどす -> CV: 0.7883 ........
+* ex_223: elo k=15にしたら0.7886
+* ex_221: tags+part(/3) clustering 40 -> CV: 0.7888
+* ex_224: tags+part(/3) clustering 40 rating -> CV: 0.7889
+* ex_225: targetencoder完全になくす -> CV: 0.7887 (かわらず)
+* ex_226: timeseries part なくす -> CV: 0.7884
 </div>
+
 
 

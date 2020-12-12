@@ -22,16 +22,22 @@ import pickle
 import json
 from feature_engineering.feature_factory_for_transformer import FeatureFactoryForTransformer
 from experiment.common import get_logger
+import time
 
 torch.manual_seed(0)
 np.random.seed(0)
-is_debug = True
-is_make_feature_factory = True
-epochs = 1
+is_debug = False
+is_make_feature_factory = False
+epochs = 8
 device = torch.device("cuda")
 
 output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
 os.makedirs(output_dir, exist_ok=True)
+wait_time = 0
+
+if not is_debug:
+    for _ in tqdm(range(wait_time)):
+        time.sleep(1)
 
 class SAKTDataset(Dataset):
     def __init__(self, group, n_skill, n_part=8, max_seq=100, is_test=False, predict_mode=False):
@@ -122,19 +128,39 @@ def future_mask(seq_length):
     future_mask = np.triu(np.ones((seq_length, seq_length)), k=1).astype('bool')
     return torch.from_numpy(future_mask)
 
+class SelfAttentionLayer(nn.Module):
+    def __init__(self, embed_dim, num_heads, dropout):
+        super(SelfAttentionLayer, self).__init__()
+        self.multi_att = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=num_heads, dropout=dropout)
+        self.layer_normal = nn.LayerNorm(embed_dim)
+        self.ffn = FFN(embed_dim)
+
+    def forward(self, v1, attn_mask):
+        x = self.layer_normal(v1)
+        att, _ = self.multi_att(x, x, x, attn_mask=attn_mask)
+        x = att + x
+        x = self.layer_normal(x)
+        x = self.ffn(x) + x
+        return x
+
 
 class SAKTModel(nn.Module):
-    def __init__(self, n_skill, max_seq=100, embed_dim=128):
+    def __init__(self, n_skill, max_seq=100, embed_dim=128, num_heads=8, dropout=0.2):
         super(SAKTModel, self).__init__()
         self.n_skill = n_skill
         self.embed_dim = embed_dim
 
         self.embedding = nn.Embedding(2 * n_skill + 1, embed_dim)
-        self.pos_embedding = nn.Embedding(max_seq - 1, embed_dim)
+        self.pos_embedding_enc = nn.Embedding(max_seq - 1, embed_dim)
+        self.pos_embedding_dec = nn.Embedding(max_seq - 1, embed_dim)
         self.e_embedding = nn.Embedding(n_skill + 1, embed_dim)
         self.part_embedding = nn.Embedding(8, embed_dim)
 
-        self.multi_att = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=8, dropout=0.2)
+        self.multi_att_enc_self1 = SelfAttentionLayer(embed_dim=embed_dim, num_heads=num_heads, dropout=dropout)
+        self.multi_att_enc_self2 = SelfAttentionLayer(embed_dim=embed_dim, num_heads=num_heads, dropout=dropout)
+        self.multi_att_dec_self1 = SelfAttentionLayer(embed_dim=embed_dim, num_heads=num_heads, dropout=dropout)
+        self.multi_att_dec_self2 = SelfAttentionLayer(embed_dim=embed_dim, num_heads=num_heads, dropout=dropout)
+        self.multi_att_dec = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=num_heads, dropout=dropout)
 
         self.dropout = nn.Dropout(0.2)
         self.layer_normal = nn.LayerNorm(embed_dim)
@@ -144,26 +170,34 @@ class SAKTModel(nn.Module):
 
     def forward(self, x, question_ids, parts):
         device = x.device
-        x = self.embedding(x)
-
-        pos_id = torch.arange(x.size(1)).unsqueeze(0).to(device)
-        pos_x = self.pos_embedding(pos_id)
-        x = x + pos_x
+        att_mask = future_mask(x.size(1)).to(device)
 
         e = self.e_embedding(question_ids)
         p = self.part_embedding(parts)
-        e = e + p
-
-        x = x.permute(1, 0, 2)  # x: [bs, s_len, embed] => [s_len, bs, embed]
+        pos_id_enc = torch.arange(x.size(1)).unsqueeze(0).to(device)
+        pos_e = self.pos_embedding_enc(pos_id_enc)
+        e = e + pos_e + p
         e = e.permute(1, 0, 2)
 
-        att_mask = future_mask(x.size(0)).to(device)
-        att_output, att_weight = self.multi_att(e, x, x, attn_mask=att_mask)
-        att_output = self.layer_normal(att_output + e)
+        att_enc_self = self.multi_att_enc_self1(e, attn_mask=att_mask)
+        att_enc_self = self.multi_att_enc_self2(att_enc_self, attn_mask=att_mask)
+
+        # decoder
+        x = self.embedding(x)
+        pos_id_dec = torch.arange(x.size(1)).unsqueeze(0).to(device)
+        pos_x = self.pos_embedding_dec(pos_id_dec)
+        x = x + pos_x
+        x = x.permute(1, 0, 2)  # x: [bs, s_len, embed] => [s_len, bs, embed]
+
+        att_dec_self = self.multi_att_dec_self1(x, attn_mask=att_mask)
+        att_dec_self = self.multi_att_dec_self1(att_dec_self, attn_mask=att_mask)
+
+        att_output, att_weight = self.multi_att_dec(att_dec_self, att_enc_self, att_enc_self, attn_mask=att_mask)
+        att_output += att_dec_self
         att_output = att_output.permute(1, 0, 2)  # att_output: [s_len, bs, embed] => [bs, s_len, embed]
 
-        x = self.ffn(att_output)
-        x = self.layer_normal(x + att_output)
+        x = self.layer_normal(att_output)
+        x = self.ffn(x) + att_output
         x = self.pred(x)
 
         return x.squeeze(-1), att_weight
@@ -235,8 +269,8 @@ def main(params: dict):
     import mlflow
     logger = get_logger()
     print("start params={}".format(params))
-    # df = pd.read_pickle("../input/riiid-test-answer-prediction/train_merged.pickle").head(30_000_000)
-    df = pd.read_pickle("../input/riiid-test-answer-prediction/split10/train_0.pickle").sort_values(["user_id", "timestamp"]).reset_index(drop=True)
+    df = pd.read_pickle("../input/riiid-test-answer-prediction/train_merged.pickle")
+    # df = pd.read_pickle("../input/riiid-test-answer-prediction/split10/train_0.pickle").sort_values(["user_id", "timestamp"]).reset_index(drop=True)
     if is_debug:
         df = df.head(30000)
     df = df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
@@ -260,6 +294,7 @@ def main(params: dict):
     w_df = df[df["is_val"] == 0]
     w_df["group"] = (w_df.groupby("user_id")["user_id"].transform("count") - w_df.groupby("user_id").cumcount()) // params["max_seq"]
     w_df["user_id"] = w_df["user_id"].astype(str) + "_" + w_df["group"].astype(str)
+
     ff_for_transformer = FeatureFactoryForTransformer(column_config={("content_id", "content_type_id"): {"type": "category"},
                                                                      "user_answer": {"type": "category"},
                                                                      "part": {"type": "category"}},
@@ -273,6 +308,9 @@ def main(params: dict):
     dataset_train = SAKTDataset(group,
                                 n_skill=n_skill,
                                 max_seq=params["max_seq"])
+
+    del w_df
+    gc.collect()
 
     ff_for_transformer = FeatureFactoryForTransformer(column_config={("content_id", "content_type_id"): {"type": "category"},
                                                                      "user_answer": {"type": "category"},
@@ -289,7 +327,7 @@ def main(params: dict):
     dataloader_train = DataLoader(dataset_train, batch_size=64, shuffle=True, num_workers=1)
     dataloader_val = DataLoader(dataset_val, batch_size=64, shuffle=False, num_workers=1)
 
-    model = SAKTModel(n_skill, embed_dim=params["embed_dim"], max_seq=params["max_seq"])
+    model = SAKTModel(n_skill, embed_dim=params["embed_dim"], max_seq=params["max_seq"], dropout=dropout)
     optimizer = torch.optim.Adam(model.parameters(), lr=params["lr"])
     criterion = nn.BCEWithLogitsLoss()
 
@@ -313,7 +351,6 @@ def main(params: dict):
         preds.extend(torch.nn.Sigmoid()(output[:, -1]).view(-1).data.cpu().numpy().tolist())
         labels.extend(label[:, -1].view(-1).data.cpu().numpy().tolist())
 
-    print(preds)
     df_oof = pd.DataFrame()
     df_oof["row_id"] = df.loc[val_idx].index
     df_oof["predict"] = preds
@@ -375,9 +412,10 @@ def main(params: dict):
 
 
 if __name__ == "__main__":
-    for embed_dim in [512]:
-        for max_seq in [100]:
-            params = {"embed_dim": embed_dim,
-                      "max_seq": max_seq,
-                      "lr": 1e-3}
+    for lr in [1e-5, 5e-4]:
+        for dropout in [0.1]:
+            params = {"embed_dim": 256,
+                      "max_seq": 100,
+                      "lr": lr,
+                      "dropout": dropout}
             main(params)

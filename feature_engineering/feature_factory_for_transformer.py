@@ -37,6 +37,8 @@ class FeatureFactoryForTransformer:
         self.target_cols = ["user_id"]
         self.index_dict = {}
         for k in self.column_config.keys():
+            if k in ["user_answer"]:
+                continue
             if type(k) == str:
                 self.target_cols.append(k)
             else:  # tuple
@@ -44,10 +46,13 @@ class FeatureFactoryForTransformer:
 
         columns = list(self.column_config.keys())
         for index, key in enumerate(columns):
+            if key in ["user_answer"]:
+                continue
             if type(key) == str:
                 self.index_dict[key] = self.target_cols.index(key)
             if type(key) == tuple:
                 self.index_dict[key] = [self.target_cols.index(x) for x in key]
+        print(self.target_cols)
 
     def make_dict(self):
         df = None
@@ -137,6 +142,7 @@ class FeatureFactoryForTransformer:
                 else:
                     w_dict[key] = [embbed_dict[x] for x in w_df[key].values]
             w_dict["answered_correctly"] = w_df["answered_correctly"].values.tolist()
+            w_dict["user_answer"] = w_df["user_answer"].values.tolist()
             w_dict["is_val"] = w_df["is_val"].values.tolist()
             group[user_id] = w_dict
         return group
@@ -150,6 +156,7 @@ class FeatureFactoryForTransformer:
             if user_id not in self.data_dict:
                 ret_dict = {x: [] for x in self.index_dict.keys()}
                 ret_dict["answered_correctly"] = []
+                ret_dict["user_answer"] = []
             else:
                 ret_dict = copy.copy(self.data_dict[user_id])
 
@@ -161,6 +168,8 @@ class FeatureFactoryForTransformer:
                     ret_dict[key] = ret_dict[key] + [self.embbed_dict[key][x[index]]]
                     ret_dict[key] = ret_dict[key][-self.sequence_length:]
 
+            ret_dict["user_answer"] = ret_dict["user_answer"] + [-1]
+            ret_dict["user_answer"] = ret_dict["user_answer"][-self.sequence_length:]
             ret_dict["answered_correctly"] = ret_dict["answered_correctly"] + [-1]  # we can't see future
             ret_dict["answered_correctly"] = ret_dict["answered_correctly"][-self.sequence_length:]
             # self.data_dict[user_id] = ret_dict

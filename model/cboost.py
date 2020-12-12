@@ -53,6 +53,7 @@ def train_catboost_cv(df: pd.DataFrame,
               df.loc[train_idx]["answered_correctly"],
               cat_features=cat_features,
               eval_set=(df.loc[val_idx][features], df.loc[val_idx]["answered_correctly"]))
+    model.save_model(f"{output_dir}/model_{model_id}_catboost")
 
     y_train = model.predict_proba(df.loc[train_idx][features])[:, 1]
     y_oof = model.predict_proba(df.loc[val_idx][features])[:, 1]
@@ -64,7 +65,6 @@ def train_catboost_cv(df: pd.DataFrame,
         mlflow.log_metric("auc_val", auc_val)
         mlflow.end_run()
 
-    model.save_model(f"{output_dir}/model_{model_id}_catboost")
 
     df_oof = pd.DataFrame()
     df_oof["row_id"] = df.loc[val_idx].index

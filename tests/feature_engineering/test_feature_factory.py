@@ -2336,7 +2336,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
-        agger.fit(df)
+        agger.fit(df, is_first_fit=True)
 
         df = pd.DataFrame({"user_id": [1, 1, 3],
                            "value": [60, 70, 10]})
@@ -2362,6 +2362,81 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
+    def test_past_n_feature_encoder_remove_now(self):
+        logger = get_logger()
+
+        feature_factory_dict = {
+            "user_id": {
+                "PastNFetureEncoder": PastNFeatureEncoder(past_ns=[2, 4],
+                                                          column="value",
+                                                          remove_now=True,
+                                                          agg_funcs=["max", "min", "mean", "last", "vslast"])
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        user1_value = [10, 20, 30, 40, 50]
+        user2_value = [10, np.nan, 20]
+        df = pd.DataFrame({"user_id": [1]*5 + [2]*3,
+                           "value": user1_value + user2_value,
+                           "answered_correctly": [0]*8})
+        user1_ary = [
+            [np.nan],
+            [10],
+            [10, 20],
+            [10, 20, 30],
+            [10, 20, 30, 40]
+        ]
+        user2_ary = [
+            [np.nan],
+            [np.nan],
+            [10]
+        ]
+
+        data_dict = {}
+        score = user1_ary + user2_ary
+        for past_n in [2, 4]:
+            data_dict[f"past{past_n}_value_mean"] = [np.array(x[-past_n:]).mean() if len(x) > 0 else np.nan for x in score]
+            data_dict[f"past{past_n}_value_max"] = [np.array(x[-past_n:]).max() if len(x) > 0 else np.nan for x in score]
+            data_dict[f"past{past_n}_value_min"] = [np.array(x[-past_n:]).min() if len(x) > 0 else np.nan for x in score]
+
+        data_dict["past2_value_last"] = [np.nan, np.nan, 10, 20, 30, np.nan, np.nan, np.nan]
+        data_dict["past4_value_last"] = [np.nan, np.nan, np.nan, np.nan, 10, np.nan, np.nan, np.nan]
+        data_dict["past2_value_vslast"] = [np.nan, np.nan, 10, 10, 10, np.nan, np.nan, np.nan]
+        data_dict["past4_value_vslast"] = [np.nan, np.nan, np.nan, np.nan, 30, np.nan, np.nan, np.nan]
+        df_expect = pd.DataFrame(data_dict)
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        agger.fit(df, is_first_fit=True)
+
+        df = pd.DataFrame({"user_id": [1, 1, 3],
+                           "value": [60, 70, 10]})
+        score = [
+            [10, 20, 30, 40, 50],
+            [10, 20, 30, 40, 50],
+            [np.nan]
+        ]
+        for past_n in [2, 4]:
+            data_dict[f"past{past_n}_value_mean"] = [np.array(x[-past_n:]).mean() if len(x) > 0 else np.nan for x in score]
+            data_dict[f"past{past_n}_value_max"] = [np.array(x[-past_n:]).max() if len(x) > 0 else np.nan for x in score]
+            data_dict[f"past{past_n}_value_min"] = [np.array(x[-past_n:]).min() if len(x) > 0 else np.nan for x in score]
+
+        data_dict["past2_value_last"] = [40, 40, np.nan]
+        data_dict["past4_value_last"] = [20, 20, np.nan]
+        data_dict["past2_value_vslast"] = [10, 10, np.nan]
+        data_dict["past4_value_vslast"] = [30, 30, np.nan]
+
+        df_expect = pd.DataFrame(data_dict)
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
     def test_previous_content_answer_te_make_dict(self):
 

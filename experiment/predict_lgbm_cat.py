@@ -28,7 +28,7 @@ from catboost import CatBoostClassifier
 
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/ex_172/20201202080625"
+model_dir = "../output/ex_224/20201212002551"
 
 data_types_dict = {
     'row_id': 'int64',
@@ -79,9 +79,22 @@ def run(debug,
         with open(model_path, "rb") as f:
             models_lgbm.append(pickle.load(f))
     models_cat = []
+    params = {
+        'n_estimators': 12000,
+        'learning_rate': 0.3,
+        'eval_metric': 'AUC',
+        'loss_function': 'Logloss',
+        'random_seed': 0,
+        'metric_period': 50,
+        'od_wait': 400,
+        'task_type': 'GPU',
+        'max_depth': 8,
+        "verbose": 100
+    }
     for model_path in glob.glob(f"{model_dir}/*catboost"):
         models_cat.append(CatBoostClassifier().load_model(model_path, format="cbm"))
 
+    print(models_cat[0].get_best_iteration())
     # load feature_factory_manager
     logger = get_logger()
     ff_manager_path = f"{model_dir}/feature_factory_manager.pickle"
@@ -148,7 +161,7 @@ def run(debug,
         # predict
         # logger.info(f"predict lgbm...")
         predicts_lgbm = []
-        cols = models_lgbm[0].feature_name()
+        cols = models_cat[0].feature_names_
         w_df = df[cols]
         for model in models_lgbm:
             predicts_lgbm.append(model.predict(w_df))

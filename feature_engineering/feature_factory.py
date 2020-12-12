@@ -1027,7 +1027,11 @@ class MeanAggregator(FeatureFactory):
 
         self.logger.info(f"{self.feature_name_base}_all_{self.column}_{self.agg_column}")
         df[self.make_col_name] = df.groupby(self.column)[self.agg_column].transform(f).astype("float32")
-        df[f"diff_{self.make_col_name}"] = (df[self.agg_column] - df[self.make_col_name]).astype("float32")
+        if self.remove_now:
+            df[f"diff_{self.make_col_name}"] = \
+                (df.groupby(self.column)[self.agg_column].shift(1) - df[self.make_col_name]).astype("float32")
+        else:
+            df[f"diff_{self.make_col_name}"] = (df[self.agg_column] - df[self.make_col_name]).astype("float32")
         return df
 
     def partial_predict(self,
@@ -3002,7 +3006,7 @@ def simple_diff(rate1, rate2):
     diff = 16 + int((rate1 - rate2) * 0.04)
     return -diff, diff
 
-def elo_rating(rate1, rate2, k=32):
+def elo_rating(rate1, rate2, k=15):
     """ rate1: lose player's rate, rate2: win player's rate """
     expect_win_1 = 1 / (1 + 10**(-(rate1 - rate2)/400))
     diff_1 = k * (0 - expect_win_1)
@@ -3063,28 +3067,29 @@ class UserContentRateEncoder(FeatureFactory):
                     columns = ["timestamp", "content_id", "content_type_id", "answered_correctly", self.column]
                 else:
                     columns = ["timestamp", "content_id", "content_type_id", "answered_correctly"] + self.column
-                columns = [x for x in columns if "tags" not in x]
-                if "tags" not in self.column:
-                    if "is_listening" in self.column:
-                        columns = ["timestamp", "content_id", "content_type_id", "answered_correctly", "user_id", "part"]
-                        df = pd.concat([pd.read_pickle(f)[columns] for f in files]).sort_values(["user_id", "timestamp"])
-                        df["is_listening"] = (df["part"] < 5).astype("uint8")
-                    else:
-                        df = pd.concat([pd.read_pickle(f)[columns] for f in files]).sort_values(["user_id", "timestamp"])
 
-                else:
-                    df = pd.concat([pd.read_pickle(f)[columns+["tags"]] for f in files]).sort_values(["user_id", "timestamp"])
-
-                    tag = df["tags"].str.split(" ", n=2, expand=True)
-                    tag.columns = [f"tags{i}" for i in range(1, len(tag.columns) + 1)]
-
-                    for col in ["tags1", "tags2"]:
-                        if col in tag.columns:
-                            df[col] = pd.to_numeric(tag[col], errors='coerce').fillna(-1).astype("int16")
-                        else:
-                            df[col] = -1
-                            df[col].astype("int16")
+                columns = [x for x in columns if "kmeans_tags40" not in x]
+                df = pd.concat([pd.read_pickle(f)[columns] for f in files]).sort_values(["user_id", "timestamp"])
                 print("loaded")
+
+                if "kmeans_tags40" in self.column:
+                    from sklearn.cluster import KMeans
+                    df_question = pd.read_csv("../input/riiid-test-answer-prediction/questions.csv")
+                    tag = df_question["tags"].str.split(" ", n=10, expand=True)
+                    tag.columns = [f"tags{i}" for i in range(1, len(tag.columns) + 1)]
+                    tags = np.arange(1, 188)
+                    for col in tag.columns:
+                        tag[col] = pd.to_numeric(tag[col], errors='coerce').fillna(-1).astype("uint8")
+                    target_cols = []
+                    for t in tags:
+                        target_cols.append(f"tag_{t}")
+                        df_question[f"tag_{t}"] = (tag == t).sum(axis=1).astype("uint8")
+                    for p in [1, 2, 3, 4, 5, 6, 7]:
+                        target_cols.append(f"part_{p}")
+                        df_question[f"part_{p}"] = (df_question["part"] == p).astype("uint8") / 3
+                    df_question["kmeans_tags40"] = KMeans(n_clusters=40).fit_predict(df_question[target_cols].values)
+                    df = pd.merge(df, df_question[["question_id", "kmeans_tags40"]], how="left", left_on="content_id", right_on="question_id")
+
                 self.make_dict(df)
 
             with open(self.dict_path, "rb") as f:
@@ -3207,17 +3212,17 @@ class UserContentRateEncoder(FeatureFactory):
                              answered_correctly=answered_correctly)
             return ret
 
-        df[f"content_rating_{self.column}"] = [self.content_rate_dict[x[0]] if x[1] == 0 else -1
-                              for x in df[["content_id", "content_type_id"]].values]
+        df[f"content_rating"] = [self.content_rate_dict[x[0]] if x[1] == 0 else -1
+                                               for x in df[["content_id", "content_type_id"]].values]
         if type(self.column) == str:
             keys = df[self.column].values
         else:
             keys = [tuple(x) for x in df[self.column].values]
         df[f"{self.column}_rating"] = [f(key, x[0], x[1], x[2]) for key, x in zip(keys, df[["content_id", "content_type_id", "answered_correctly"]].values)]
 
-        df[f"content_rating_{self.column}"] = df[f"content_rating_{self.column}"].astype("int16")
+        df[f"content_rating"] = df[f"content_rating"].astype("int16")
         df[f"{self.column}_rating"] = df[f"{self.column}_rating"].astype("int16")
-        df[f"rating_diff_content_{self.column}"] = df[f"content_rating_{self.column}"] - df[f"{self.column}_rating"]
+        df[f"rating_diff_content_{self.column}"] = df[f"content_rating"] - df[f"{self.column}_rating"]
         return df
 
     def partial_predict(self,
@@ -3240,11 +3245,11 @@ class UserContentRateEncoder(FeatureFactory):
             keys = [tuple(x) for x in df[self.column].values]
 
         df[f"{self.column}_rating"] = [f(key, x[0], x[1]) for key, x in zip(keys, df[["content_id", "content_type_id"]].values)]
-        df[f"content_rating_{self.column}"] = [self.content_rate_dict[x[0]] if x[1] == 0 else -1
+        df[f"content_rating"] = [self.content_rate_dict[x[0]] if x[1] == 0 else -1
                                 for x in df[["content_id", "content_type_id"]].values]
-        df[f"content_rating_{self.column}"] = df[f"content_rating_{self.column}"].astype("int16")
+        df[f"content_rating"] = df[f"content_rating"].astype("int16")
         df[f"{self.column}_rating"] = df[f"{self.column}_rating"].astype("int16")
-        df[f"rating_diff_content_{self.column}"] = df[f"content_rating_{self.column}"] - df[f"{self.column}_rating"]
+        df[f"rating_diff_content_{self.column}"] = df[f"content_rating"] - df[f"{self.column}_rating"]
 
         return df
 
@@ -3702,8 +3707,9 @@ class StudyTermEncoder(FeatureFactory):
     def _predict(self,
                  df: pd.DataFrame):
         df["study_time"] = df["shiftdiff_timestamp_by_user_id_cap200k"] - df["prior_question_elapsed_time"]
-        df["study_time"] = [x if x < 200000 else -1 for x in df["study_time"].fillna(-99).values]
-        df["study_time"] = df["study_time"].astype("int32")
+        df["study_time"] = df["study_time"].fillna(-1).astype("int32")
+        df["study_time2"] = df["shiftdiff_timestamp_by_user_id_cap200k"] + df["prior_question_elapsed_time"]
+        df["study_time2"] = df["study_time2"].fillna(-1).astype("int32")
         return df
 
     def _all_predict_core(self,

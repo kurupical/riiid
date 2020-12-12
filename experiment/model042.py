@@ -25,9 +25,9 @@ from experiment.common import get_logger
 
 torch.manual_seed(0)
 np.random.seed(0)
-is_debug = True
+is_debug = False
 is_make_feature_factory = True
-epochs = 1
+epochs = 8
 device = torch.device("cuda")
 
 output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
@@ -158,8 +158,8 @@ class SAKTModel(nn.Module):
         e = e.permute(1, 0, 2)
 
         att_mask = future_mask(x.size(0)).to(device)
-        att_output, att_weight = self.multi_att(e, x, x, attn_mask=att_mask)
-        att_output = self.layer_normal(att_output + e)
+        att_output, att_weight = self.multi_att(e, e, x, attn_mask=att_mask)
+        att_output = self.layer_normal(att_output + x)
         att_output = att_output.permute(1, 0, 2)  # att_output: [s_len, bs, embed] => [bs, s_len, embed]
 
         x = self.ffn(att_output)

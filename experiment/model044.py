@@ -22,16 +22,22 @@ import pickle
 import json
 from feature_engineering.feature_factory_for_transformer import FeatureFactoryForTransformer
 from experiment.common import get_logger
+import time
 
 torch.manual_seed(0)
 np.random.seed(0)
-is_debug = True
+is_debug = False
 is_make_feature_factory = True
-epochs = 1
+epochs = 8
 device = torch.device("cuda")
 
 output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
 os.makedirs(output_dir, exist_ok=True)
+wait_time = 0
+
+if not is_debug:
+    for _ in tqdm(range(wait_time)):
+        time.sleep(1)
 
 class SAKTDataset(Dataset):
     def __init__(self, group, n_skill, n_part=8, max_seq=100, is_test=False, predict_mode=False):
@@ -130,11 +136,14 @@ class SAKTModel(nn.Module):
         self.embed_dim = embed_dim
 
         self.embedding = nn.Embedding(2 * n_skill + 1, embed_dim)
-        self.pos_embedding = nn.Embedding(max_seq - 1, embed_dim)
+        self.pos_embedding_enc = nn.Embedding(max_seq - 1, embed_dim)
+        self.pos_embedding_dec = nn.Embedding(max_seq - 1, embed_dim)
         self.e_embedding = nn.Embedding(n_skill + 1, embed_dim)
         self.part_embedding = nn.Embedding(8, embed_dim)
 
-        self.multi_att = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=8, dropout=0.2)
+        self.multi_att_enc_self = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=8, dropout=0.2)
+        self.multi_att_dec_self = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=8, dropout=0.2)
+        self.multi_att_dec = nn.MultiheadAttention(embed_dim=embed_dim, num_heads=8, dropout=0.2)
 
         self.dropout = nn.Dropout(0.2)
         self.layer_normal = nn.LayerNorm(embed_dim)
@@ -144,26 +153,38 @@ class SAKTModel(nn.Module):
 
     def forward(self, x, question_ids, parts):
         device = x.device
-        x = self.embedding(x)
-
-        pos_id = torch.arange(x.size(1)).unsqueeze(0).to(device)
-        pos_x = self.pos_embedding(pos_id)
-        x = x + pos_x
+        att_mask = future_mask(x.size(1)).to(device)
 
         e = self.e_embedding(question_ids)
         p = self.part_embedding(parts)
-        e = e + p
-
-        x = x.permute(1, 0, 2)  # x: [bs, s_len, embed] => [s_len, bs, embed]
+        pos_id_enc = torch.arange(x.size(1)).unsqueeze(0).to(device)
+        pos_e = self.pos_embedding_enc(pos_id_enc)
+        e = e + pos_e + p
+        e = self.layer_normal(e)
         e = e.permute(1, 0, 2)
 
-        att_mask = future_mask(x.size(0)).to(device)
-        att_output, att_weight = self.multi_att(e, x, x, attn_mask=att_mask)
-        att_output = self.layer_normal(att_output + e)
+        att_enc_self, _ = self.multi_att_enc_self(e, e, e, attn_mask=att_mask)
+        att_enc_self = self.layer_normal(att_enc_self + e)
+        att_enc_self = self.ffn(att_enc_self)
+        att_enc_self = self.layer_normal(att_enc_self)
+
+        # decoder
+        x = self.embedding(x)
+        pos_id_dec = torch.arange(x.size(1)).unsqueeze(0).to(device)
+        pos_x = self.pos_embedding_dec(pos_id_dec)
+        x = x + pos_x
+        x = x.permute(1, 0, 2)  # x: [bs, s_len, embed] => [s_len, bs, embed]
+        x = self.layer_normal(x)
+
+        att_dec_self, _ = self.multi_att_dec_self(x, x, x, attn_mask=att_mask)
+        att_dec_self = self.layer_normal(att_dec_self + x)
+
+        att_output, att_weight = self.multi_att_dec(att_dec_self, att_enc_self, att_enc_self, attn_mask=att_mask)
+        att_output += att_dec_self
         att_output = att_output.permute(1, 0, 2)  # att_output: [s_len, bs, embed] => [bs, s_len, embed]
 
-        x = self.ffn(att_output)
-        x = self.layer_normal(x + att_output)
+        x = self.layer_normal(att_output)
+        x = self.ffn(x) + att_output
         x = self.pred(x)
 
         return x.squeeze(-1), att_weight
@@ -313,7 +334,6 @@ def main(params: dict):
         preds.extend(torch.nn.Sigmoid()(output[:, -1]).view(-1).data.cpu().numpy().tolist())
         labels.extend(label[:, -1].view(-1).data.cpu().numpy().tolist())
 
-    print(preds)
     df_oof = pd.DataFrame()
     df_oof["row_id"] = df.loc[val_idx].index
     df_oof["predict"] = preds
@@ -375,7 +395,7 @@ def main(params: dict):
 
 
 if __name__ == "__main__":
-    for embed_dim in [512]:
+    for embed_dim in [256]:
         for max_seq in [100]:
             params = {"embed_dim": embed_dim,
                       "max_seq": max_seq,
