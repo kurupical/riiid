@@ -30,7 +30,11 @@ from feature_engineering.feature_factory import \
     QuestionQuestionTableEncoder2, \
     TagsTargetEncoder, \
     PastNFeatureEncoder, \
-    PreviousContentAnswerTargetEncoder
+    PreviousContentAnswerTargetEncoder, \
+    DurationPreviousContent, \
+    ElapsedTimeMeanByContentIdEncoder, \
+    UserContentNowRateEncoder, \
+    PastNUserAnswerHistory
 from experiment.common import get_logger
 import pickle
 import os
@@ -1698,7 +1702,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
         rate = u1_rate + u2_rate
 
         df_expect = pd.DataFrame({
-            "content_rating_user_id": [1700, 1600, np.nan, 1500, 1400, 1700, 1600, 1500],
+            "content_rating": [1700, 1600, np.nan, 1500, 1400, 1700, 1600, 1500],
             "user_id_rating": rate
         })
 
@@ -1716,7 +1720,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
                            "content_type_id": [0, 0, 0, 0, 1]})
 
         df_expect = pd.DataFrame({
-            "content_rating_user_id": [1700, 1600, 1700, 1600, np.nan],
+            "content_rating": [1700, 1600, 1700, 1600, np.nan],
             "user_id_rating": [1537, 1464, 1464, 1500, np.nan]
         })
 
@@ -1837,7 +1841,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
         rate = u1_rate + u2_rate
 
         df_expect = pd.DataFrame({
-            "content_rating_['user_id', 'part']": [1700, 1600, np.nan, 1500, 1400, 1700, 1600, 1500],
+            "content_rating": [1700, 1600, np.nan, 1500, 1400, 1700, 1600, 1500],
             "['user_id', 'part']_rating": rate
         })
 
@@ -1856,7 +1860,7 @@ class PartialAggregatorTestCase(unittest.TestCase):
                            "content_type_id": [0, 0, 0, 0, 1]})
 
         df_expect = pd.DataFrame({
-            "content_rating_['user_id', 'part']": [1700, 1600, 1700, 1600, np.nan],
+            "content_rating": [1700, 1600, 1700, 1600, np.nan],
             "['user_id', 'part']_rating": [1537, 1464, 1464, 1500, np.nan]
         })
 
@@ -2734,6 +2738,98 @@ class PartialAggregatorTestCase(unittest.TestCase):
         })
 
         df_expect = df_expect.fillna(-1).astype("int16")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+    def test_past_content_answers_make_dict(self):
+        pickle_dir = "./test_dict.pickle"
+        if os.path.isdir(pickle_dir):
+            os.remove(pickle_dir)
+
+        # prepare test data
+        u1_content_id = [100, 200, 300, 400]
+        u1_user_answer = [2, 3, 1, 4]
+        u1_ans_correctly = [1, 0, 1, 1]
+
+        u2_content_id = [100, 200, 300]
+        u2_user_answer = [2, 3, 1]
+        u2_ans_correctly = [0, 0, 1]
+
+        df = pd.DataFrame({"user_id": [1]*4 + [2]*3,
+                           "content_id": u1_content_id + u2_content_id,
+                           "user_answer": u1_user_answer + u2_user_answer,
+                           "answered_correctly": u1_ans_correctly + u2_ans_correctly})
+        encoder = PastNUserAnswerHistory(past_n=3, min_size=0, userans_te_dict={})
+        encoder.make_dict(df, output_dir=pickle_dir)
+
+        # key = (now_content, past1_content, past1_userans, past2_content, past2_userans, past3_content, past3_userans
+        elapsed_time_dict = {
+            (100, -1, -1, -1, -1, -1, -1): 0.5,
+            (200, 100, 2, -1, -1, -1, -1): 0,
+            (300, 200, 3, 100, 2, -1, -1): 1,
+            (400, 300, 1, 200, 3, 100, 2): 1,
+        }
+
+        with open(pickle_dir, "rb") as f:
+            actual = pickle.load(f)
+
+        self.assertEqual(elapsed_time_dict, actual)
+        os.remove(pickle_dir)
+
+    def test_past_content_answers(self):
+        logger = get_logger()
+
+        # (lecture, question, is_lectured, past_answered)
+        userans_te_dict = {
+            (100, -1, -1, -1, -1, -1, -1): 0.1,
+            (200, 100, 2, -1, -1, -1, -1): 0.2,
+            (300, 200, 3, 100, 2, -1, -1): 0.4,
+            (400, 300, 1, 200, 3, 100, 2): 0.8,
+        }
+        feature_factory_dict = {
+            "user_id": {
+                "PastNUserAnswerHistory": PastNUserAnswerHistory(past_n=3, min_size=0, userans_te_dict=userans_te_dict)
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        # prepare test data
+        u1_content_id = [100, 200, 300, 400]
+        u1_user_answer = [2, 3, 1, 4]
+        u1_ans_correctly = [1, 0, 1, 1]
+
+        u2_content_id = [100, 200]
+        u2_user_answer = [2, 3]
+        u2_ans_correctly = [0, 0]
+
+        df = pd.DataFrame({"user_id": [1]*4 + [2]*2,
+                           "content_id": u1_content_id + u2_content_id,
+                           "user_answer": u1_user_answer + u2_user_answer,
+                           "answered_correctly": u1_ans_correctly + u2_ans_correctly})
+
+        df_expect = pd.DataFrame({
+            "past3_user_answer_history": [0.1, 0.2, 0.4, 0.8, 0.1, 0.2]
+        })
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+
+        df = pd.DataFrame({"user_id": [2, 3],
+                           "content_id": [300, 100]})
+
+        df_expect = pd.DataFrame({
+            "past3_user_answer_history": [0.4, 0.1],
+        })
+
+        df_expect = df_expect.astype("float32")
         df_actual = agger.partial_predict(df)
 
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])

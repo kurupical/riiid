@@ -13,6 +13,7 @@ from multiprocessing import Pool, cpu_count
 
 pd.set_option("max_column", 20)
 tqdm.tqdm.pandas()
+MERGE_FILE_PATH = "../input/riiid-test-answer-prediction/train_merged.pickle"
 
 class FeatureFactory:
     feature_name_base = ""
@@ -1883,9 +1884,9 @@ class QuestionLectureTableEncoder2(FeatureFactory):
         if question_lecture_dict is None:
             if not os.path.isfile(self.question_lecture_dict_path.format(self.min_size)):
                 print("make_new_dict")
-                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
-                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
-                                    ["user_id", "content_id", "content_type_id", "answered_correctly"]] for f in files])
+                cols = ["user_id", "content_id", "content_type_id", "answered_correctly"]
+                df = pd.read_pickle(MERGE_FILE_PATH)[cols]
+
                 print("loaded")
                 self.make_dict(df)
             with open(self.question_lecture_dict_path.format(self.min_size), "rb") as f:
@@ -2112,9 +2113,9 @@ class QuestionQuestionTableEncoder(FeatureFactory):
         if question_lecture_dict is None:
             if not os.path.isfile(self.question_lecture_dict_path.format(self.min_size)):
                 print("make_new_dict")
-                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")[:3]
-                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
-                                    ["user_id", "content_id", "content_type_id", "answered_correctly"]] for f in files])
+                cols = ["user_id", "content_id", "content_type_id", "user_answer", "answered_correctly"]
+                df = pd.read_pickle(MERGE_FILE_PATH)[cols]
+
                 print("loaded")
                 self.make_dict(df)
             with open(self.question_lecture_dict_path.format(self.min_size), "rb") as f:
@@ -2326,9 +2327,9 @@ class QuestionQuestionTableEncoder2(FeatureFactory):
         if question_lecture_dict is None:
             if not os.path.isfile(self.question_lecture_dict_path.format(self.min_size)):
                 print("make_new_dict")
-                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
-                df = pd.concat([pd.read_pickle(f).head(3_000_000).sort_values(["user_id", "timestamp"])[
-                                    ["user_id", "content_id", "content_type_id", "answered_correctly"]] for f in files])
+
+                cols = ["user_id", "content_id", "content_type_id", "answered_correctly"]
+                df = pd.read_pickle(MERGE_FILE_PATH)[cols].head(30_000_000)
                 print("loaded")
                 self.make_dict(df)
             with open(self.question_lecture_dict_path.format(self.min_size), "rb") as f:
@@ -2546,9 +2547,9 @@ class QuestionQuestionTableEncoder3(FeatureFactory):
         if question_lecture_dict is None:
             if not os.path.isfile(self.question_lecture_dict_path.format(self.min_size)):
                 print("make_new_dict")
-                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
-                df = pd.concat([pd.read_pickle(f).head(2_000_000).sort_values(["user_id", "timestamp"])[
-                                    ["user_id", "content_id", "content_type_id", "user_answer", "answered_correctly"]] for f in files])
+
+                cols = ["user_id", "content_id", "content_type_id", "user_answer", "answered_correctly"]
+                df = pd.read_pickle(MERGE_FILE_PATH)[cols].head(20_000_000)
                 print("loaded")
                 self.make_dict(df)
             with open(self.question_lecture_dict_path.format(self.min_size), "rb") as f:
@@ -3111,57 +3112,20 @@ class UserContentRateEncoder(FeatureFactory):
         self.content_rate_dict = content_rate_dict
         self.dict_path = f"../feature_engineering/content_{self.column}_{rate_func}_rate_dict.pickle"
         self.make_col_name = f"{self.feature_name_base}_{self.column}_{rate_func}_rate_dict.pickle"
-        if self.content_rate_dict is None:
-            if not os.path.isfile(self.dict_path):
-                print("make_new_dict")
-                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
-                if type(self.column) == str:
-                    columns = ["timestamp", "content_id", "content_type_id", "answered_correctly", self.column]
-                else:
-                    columns = ["timestamp", "content_id", "content_type_id", "answered_correctly"] + self.column
-
-                columns = [x for x in columns if "kmeans_tags40" not in x]
-                df = pd.concat([pd.read_pickle(f)[columns] for f in files]).sort_values(["user_id", "timestamp"])
-                print("loaded")
-
-                if "kmeans_tags40" in self.column:
-                    from sklearn.cluster import KMeans
-                    df_question = pd.read_csv("../input/riiid-test-answer-prediction/questions.csv")
-                    tag = df_question["tags"].str.split(" ", n=10, expand=True)
-                    tag.columns = [f"tags{i}" for i in range(1, len(tag.columns) + 1)]
-                    tags = np.arange(1, 188)
-                    for col in tag.columns:
-                        tag[col] = pd.to_numeric(tag[col], errors='coerce').fillna(-1).astype("uint8")
-                    target_cols = []
-                    for t in tags:
-                        target_cols.append(f"tag_{t}")
-                        df_question[f"tag_{t}"] = (tag == t).sum(axis=1).astype("uint8")
-                    for p in [1, 2, 3, 4, 5, 6, 7]:
-                        target_cols.append(f"part_{p}")
-                        df_question[f"part_{p}"] = (df_question["part"] == p).astype("uint8") / 3
-                    df_question["kmeans_tags40"] = KMeans(n_clusters=40).fit_predict(df_question[target_cols].values)
-                    df = pd.merge(df, df_question[["question_id", "kmeans_tags40"]], how="left", left_on="content_id", right_on="question_id")
-
-                self.make_dict(df)
-
-            with open(self.dict_path, "rb") as f:
-                self.content_rate_dict = pickle.load(f)
-        else:
-            self.content_rate_dict = self.content_rate_dict
 
     def make_dict(self,
                   df: pd.DataFrame,
                   output_dir: str=None):
 
-        df = df[df["content_type_id"] == 0].sort_values(["user_id", "timestamp"])
+        w_df = df[df["content_type_id"] == 0]
         if type(self.column) == str:
-            df = df[["content_id", "answered_correctly", self.column]]
+            w_df = w_df[["content_id", "answered_correctly", self.column]]
         else:
-            df = df[["content_id", "answered_correctly"] + self.column]
+            w_df = w_df[["content_id", "answered_correctly"] + self.column]
         content_dict = {}
         user_dict = {}
 
-        for x in tqdm.tqdm(df.values):
+        for x in tqdm.tqdm(w_df.values):
             content_id = x[0]
             answered_correctly = x[1]
             if type(self.column) == str:
@@ -3243,6 +3207,15 @@ class UserContentRateEncoder(FeatureFactory):
     def _all_predict_core(self,
                     df: pd.DataFrame):
         self.logger.info(f"user_rating {self.column}")
+
+        if self.content_rate_dict is None:
+            if not os.path.isfile(self.dict_path):
+                self.make_dict(df)
+            with open(self.dict_path, "rb") as f:
+                self.content_rate_dict = pickle.load(f)
+        else:
+            self.content_rate_dict = self.content_rate_dict
+
         user_dict = {}
         def f(user_key, content_id, content_type_id, answered_correctly):
             if content_type_id == 1:
@@ -3347,7 +3320,7 @@ class UserContentNowRateEncoder(FeatureFactory):
         self.model_id = model_id
         self.content_rate_dict = content_rate_dict
         self.dict_path = f"../feature_engineering/content_['user_id', 'part']_{rate_func}_rate_dict.pickle"
-        self.make_col_name = f"{self.feature_name_base}_{self.column}_{rate_func}_rate_dict"
+        self.make_col_name = f"{self.feature_name_base}_{self.column}_{rate_func}_rate_dict_{self.target}"
 
     def make_dict(self,
                   df: pd.DataFrame,
@@ -3486,10 +3459,9 @@ class UserContentNowRateEncoder(FeatureFactory):
         keys = df["user_id"].values
 
         df[f"content_rating"] = df[f"content_rating"].astype("int16")
-        for t in self.target:
+        for t in tqdm.tqdm(self.target):
             df[f"{self.column}{t}_rating"] = [f(key, t, x[0], x[1], x[2], x[3]) for key, x in zip(keys, df[["content_id", "content_type_id", "answered_correctly", self.column]].values)]
             df[f"{self.column}{t}_rating"] = df[f"{self.column}{t}_rating"].astype("int16")
-            df[f"rating_diff_content_{self.column}{t}"] = df[f"content_rating"] - df[f"{self.column}{t}_rating"]
         return df
 
     def partial_predict(self,
@@ -3527,7 +3499,6 @@ class UserContentNowRateEncoder(FeatureFactory):
         for t in self.target:
             df[f"{self.column}{t}_rating"] = [f(x[0], x[1], x[2], x[3], t) for x in df[["user_id", "content_id", "content_type_id", self.column]].values]
             df[f"{self.column}{t}_rating"] = df[f"{self.column}{t}_rating"].astype("int16")
-            df[f"rating_diff_content_{self.column}{t}"] = df[f"content_rating"] - df[f"{self.column}{t}_rating"]
 
         return df
 
@@ -3607,9 +3578,9 @@ class UserAnswerLevelEncoder(FeatureFactory):
         if user_answer_dict is None:
             if not os.path.isfile(self.user_answer_dict_path):
                 print("make_new_dict")
-                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
-                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
-                                    ["user_id", "content_id", "content_type_id", "answered_correctly", "user_answer"]] for f in files])
+
+                cols = ["user_id", "content_id", "content_type_id", "user_answer", "answered_correctly"]
+                df = pd.read_pickle(MERGE_FILE_PATH)[cols]
                 print("loaded")
                 self.make_dict(df)
             with open(self.user_answer_dict_path, "rb") as f:
@@ -4074,9 +4045,8 @@ class ElapsedTimeVsShiftDiffEncoder(FeatureFactory):
         if elapsed_time_dict is None:
             if not os.path.isfile(self.dict_path):
                 print("make_new_dict")
-                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
                 cols = ["user_id", "content_id", "prior_question_elapsed_time"]
-                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[cols] for f in files])
+                df = pd.read_pickle(MERGE_FILE_PATH)[cols]
                 print("loaded")
                 self.make_dict(df)
             with open(self.dict_path, "rb") as f:
@@ -4161,8 +4131,7 @@ class Word2VecEncoder(FeatureFactory):
         if w2v_dict is None:
             if not os.path.isfile(self.dict_path):
                 print("make_new_dict")
-                files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")[:2]
-                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[["user_id"] + self.columns] for f in files])
+                df = pd.read_pickle(MERGE_FILE_PATH)[["user_id"] + self.columns]
                 print("loaded")
                 self.make_dict(df)
             with open(self.dict_path, "rb") as f:
@@ -4443,9 +4412,9 @@ class PreviousContentAnswerTargetEncoder(FeatureFactory):
             if not os.path.isfile(self.prev_dict_path.format(self.min_size)):
                 print("make_new_dict")
                 files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
-                df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[
-                                    ["user_id", "content_id", "content_type_id", "user_answer", "answered_correctly"]
-                                ] for f in files])
+                cols = ["user_id", "content_id", "content_type_id", "user_answer", "answered_correctly"]
+                df = pd.read_pickle(MERGE_FILE_PATH)[cols]
+
                 print("loaded")
                 self.make_dict(df)
             with open(self.prev_dict_path.format(self.min_size), "rb") as f:
@@ -4532,6 +4501,309 @@ class PreviousContentAnswerTargetEncoder(FeatureFactory):
 
     def __repr__(self):
         return self.__class__.__name__
+
+
+class DurationPreviousContent(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.column = "timestamp"
+        self.logger = logger
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.is_partial_fit = is_partial_fit
+        self.make_col_name = "duration_previous_content"
+        self.data_dict = {}
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[Union[str, tuple],
+                                       Dict[str, object]],
+            is_first_fit: bool):
+        group = df.groupby("user_id")
+        if len(self.data_dict) == 0:
+            self.data_dict = group[self.column].last().to_dict()
+        else:
+            for key, value in group[self.column].last().to_dict().items():
+                self.data_dict[key] = value
+        return self
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        df[self.make_col_name] = df[self.column] - df.groupby("user_id")[self.column].shift(1)
+        df[self.make_col_name] = df[self.make_col_name].replace(0, np.nan)
+        df[self.make_col_name] = df.groupby("user_id")[self.make_col_name].fillna(method="ffill")
+        df[self.make_col_name] = df[self.make_col_name] / df.groupby(["user_id", "task_container_id"])["user_id"].transform("count")
+        df[self.make_col_name] = df[self.make_col_name].fillna(0).astype("uint32")
+        df[f"{self.make_col_name}_cap100k"] = [x if x < 100000 else 100000 for x in df[self.make_col_name].values]
+        df[f"{self.make_col_name}_cap100k"] = df[f"{self.make_col_name}_cap100k"].astype("uint32")
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        """
+        リアルタイムfit
+        :param df:
+        :return:
+        """
+        groupby_values = df["user_id"].values
+
+        def f(idx):
+            """
+            xがnullのときは、辞書に前の時間が登録されていればその時間との差分を返す。
+            そうでなければ、0を返す
+            :param idx:
+            :return:
+            """
+            if groupby_values[idx] in self.data_dict:
+                return self.data_dict[groupby_values[idx]]
+            else:
+                return 0
+
+        w_diff = df.groupby("user_id")[self.column].shift(1)
+        w_diff = [x if not np.isnan(x) else f(idx) for idx, x in enumerate(w_diff.values)]
+        df[self.make_col_name] = (df[self.column] - w_diff).replace(0, np.nan)
+        df[self.make_col_name] = df.groupby("user_id")[self.make_col_name].fillna(method="ffill")
+        df[self.make_col_name] = df[self.make_col_name] / df.groupby(["user_id", "task_container_id"])["user_id"].transform("count")
+        df[self.make_col_name] = df[self.make_col_name].fillna(0).astype("uint32")
+        df[f"{self.make_col_name}_cap100k"] = [x if x < 100000 else 100000 for x in df[self.make_col_name].values]
+        df[f"{self.make_col_name}_cap100k"] = df[f"{self.make_col_name}_cap100k"].astype("uint32")
+
+        if is_update:
+            for key, value in df.groupby("user_id")[self.column].last().to_dict().items():
+                self.data_dict[key] = value
+        return df
+
+class ElapsedTimeMeanByContentIdEncoder(FeatureFactory):
+
+    def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 elapsed_time_dict: Union[Dict[str, list], None] = None,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.data_dict = {}
+        self.dict_path = f"../feature_engineering/elapsed_time_mean_by_content_id.pickle"
+        self.make_col_name = "elapsed_time_mean_by_content_id"
+        if elapsed_time_dict is None:
+            if not os.path.isfile(self.dict_path):
+                print("make_new_dict")
+                cols = ["user_id", "content_id", "task_container_id", "prior_question_elapsed_time"]
+                df = pd.read_pickle(MERGE_FILE_PATH)[cols]
+                print("loaded")
+                self.make_dict(df)
+            with open(self.dict_path, "rb") as f:
+                self.elapsed_time_dict = pickle.load(f)
+        else:
+            self.elapsed_time_dict = elapsed_time_dict
+
+    def make_dict(self,
+                  df: pd.DataFrame,
+                  output_dir: str = None):
+        """
+        question_lecture_dictを作って, 所定の場所に保存する
+        :param df:
+        :param is_output:
+        :return:
+        """
+
+        w_df = df.drop_duplicates(["user_id", "task_container_id"])
+        w_df["elapsed_time"] = w_df.groupby("user_id")["prior_question_elapsed_time"].shift(-1)
+
+        df = pd.merge(df, w_df[["user_id", "task_container_id", "elapsed_time"]], how="inner")[["content_id", "elapsed_time"]]
+        df = df.dropna()
+        ret_dict = df.groupby("content_id")["elapsed_time"].mean().to_dict()
+        if output_dir is None:
+            output_dir = self.dict_path
+        with open(output_dir, "wb") as f:
+            pickle.dump(ret_dict, f)
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
+        return self
+
+    def _predict(self,
+                 df: pd.DataFrame):
+        df["elapsed_time_content_id_mean"] = [self.elapsed_time_dict[x] for x in df["content_id"].values]
+        df["elapsed_time_content_id_mean"] = df["elapsed_time_content_id_mean"].astype("int32")
+
+        df["elapsed_time_mean_content_id_vs_prior_elapsed_time"] = df["prior_question_elapsed_time"] - df["elapsed_time_content_id_mean"]
+        df["elapsed_time_mean_content_id_vs_prior_elapsed_time"] = df["elapsed_time_mean_content_id_vs_prior_elapsed_time"].fillna(0).astype("int32")
+        return df
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+
+        self.logger.info(f"elapsed_time")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+
+class PastNUserAnswerHistory(FeatureFactory):
+
+    def __init__(self,
+                 past_n: int,
+                 min_size: int,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 userans_te_dict: Union[Dict[str, list], None] = None,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
+        self.past_n = past_n
+        self.min_size = min_size
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.data_dict = {}
+        self.dict_path = f"../feature_engineering/past{past_n}_min_size{min_size}_user_answer_history.pickle"
+        self.make_col_name = f"past{past_n}_user_answer_history"
+        if userans_te_dict is None:
+            if not os.path.isfile(self.dict_path):
+                print("make_new_dict")
+                cols = ["user_id", "content_id", "user_answer", "answered_correctly"]
+                df = pd.read_pickle(MERGE_FILE_PATH)[cols]
+                print("loaded")
+                self.make_dict(df)
+            with open(self.dict_path, "rb") as f:
+                self.userans_te_dict = pickle.load(f)
+        else:
+            self.userans_te_dict = userans_te_dict
+
+    def make_dict(self,
+                  df: pd.DataFrame,
+                  output_dir: str = None):
+        """
+        question_lecture_dictを作って, 所定の場所に保存する
+        :param df:
+        :param is_output:
+        :return:
+        """
+        
+        df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
+        cols = ["content_id"]
+        for i in tqdm.tqdm(range(1, self.past_n+1)):
+            col_content = f"target{i}_content"
+            col_ans = f"target{i}_ans"
+
+            df[col_content] = df.groupby("user_id")["content_id"].shift(i).fillna(-1)
+            df[col_ans] = df.groupby("user_id")["user_answer"].shift(i).fillna(-1)
+
+            cols.append(col_content)
+            cols.append(col_ans)
+
+        df["agg"] = [tuple(x) for x in df[cols].values]
+
+        dict_size = df.groupby("agg")["answered_correctly"].size().to_dict()
+        dict_sum = df.groupby("agg")["answered_correctly"].sum().to_dict()
+
+        ret_dict = {}
+        for key in dict_size.keys():
+            if dict_size[key] > self.min_size:
+                ret_dict[key] = dict_sum[key] / dict_size[key]
+
+        if output_dir is None:
+            output_dir = self.dict_path
+        with open(output_dir, "wb") as f:
+            pickle.dump(ret_dict, f)
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
+        group = df.groupby("user_id")
+
+        for user_id, w_df in group:
+            keys = w_df.tail(self.past_n)[["user_answer", "content_id"]].fillna(-1).values.reshape(-1)[::-1]
+            if user_id not in self.data_dict:
+                self.data_dict[user_id] = keys.tolist()
+            else:
+                self.data_dict[user_id] = (keys.tolist() + self.data_dict[user_id])[:self.past_n*2]
+        return self
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        def f(x):
+            if x in self.userans_te_dict:
+                return self.userans_te_dict[x]
+            else:
+                return np.nan
+        self.logger.info(f"past_n_user_answer_history")
+
+        cols = ["content_id"]
+        for i in range(1, self.past_n+1):
+            col_content = f"target{i}_content"
+            col_ans = f"target{i}_ans"
+
+            df[col_content] = df.groupby("user_id")["content_id"].shift(i).fillna(-1)
+            df[col_ans] = df.groupby("user_id")["user_answer"].shift(i).fillna(-1)
+
+            cols.append(col_content)
+            cols.append(col_ans)
+
+        df[self.make_col_name] = [f(tuple(x)) for x in df[cols].values]
+        df[self.make_col_name] = df[self.make_col_name].astype("float32")
+        df = df.drop(cols[1:], axis=1)
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        def f(user_id, content_id):
+            ret = [content_id]
+
+            if user_id in self.data_dict:
+                print(self.data_dict[user_id])
+                ret.extend(self.data_dict[user_id])
+
+            key_length = self.past_n*2 + 1
+            if len(ret) < key_length:
+                ret += [-1] * (key_length - len(ret))
+
+            ret = tuple(ret)
+            print(ret)
+
+            if ret in self.userans_te_dict:
+                return self.userans_te_dict[ret]
+            else:
+                return np.nan
+        df[self.make_col_name] = [f(x[0], x[1]) for x in df[["user_id", "content_id"]].values]
+        df[self.make_col_name] = df[self.make_col_name].astype("float32")
+        return df
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
 
 
 class FeatureFactoryManager:
