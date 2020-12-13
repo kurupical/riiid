@@ -4806,6 +4806,103 @@ class PastNUserAnswerHistory(FeatureFactory):
         return f"{self.__class__.__name__}"
 
 
+class CorrectVsIncorrectMeanEncoder(FeatureFactory):
+
+    def __init__(self,
+                 groupby: str,
+                 column: str,
+                 min_size: int=0,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 target_dict: Union[Dict[tuple, list], None] = None,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
+        self.groupby = groupby
+        self.column = column
+        self.min_size = min_size
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.data_dict = {}
+        self.dict_path = f"../feature_engineering/correct_vs_incorrect_{groupby}_{column}_min{min_size}.pickle"
+        self.make_col_name = "correct_vs_incorrect"
+        self.target_dict = target_dict
+
+    def make_dict(self,
+                  df: pd.DataFrame,
+                  output_dir: str = None):
+        """
+        question_lecture_dictを作って, 所定の場所に保存する
+        :param df:
+        :param is_output:
+        :return:
+        """
+
+        size_dict = df.groupby([self.groupby, "answered_correctly"])[self.column].size().to_dict()
+        sum_dict = df.groupby([self.groupby, "answered_correctly"])[self.column].sum().to_dict()
+
+        ret_dict = {}
+        for key in size_dict.keys():
+            if size_dict[key] > self.min_size:
+                ret_dict[key] = sum_dict[key] / size_dict[key]
+        if output_dir is None:
+            output_dir = self.dict_path
+        with open(output_dir, "wb") as f:
+            pickle.dump(ret_dict, f)
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
+        return self
+
+    def _predict(self,
+                 df: pd.DataFrame):
+        def f(x, target):
+            if (x, target) in self.target_dict:
+                return self.target_dict[(x, target)]
+            else:
+                return np.nan
+
+        df[f"diff_{self.column}_groupby_{self.groupby}_vs_incorrect_mean"] = \
+            (df[self.column] - [f(x, 0) for x in df[self.groupby]]).astype("float32")
+        df[f"diff_{self.column}_groupby_{self.groupby}_vs_correct_mean"] = \
+            (df[self.column] - [f(x, 1) for x in df[self.groupby]]).astype("float32")
+        return df
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+
+        if self.target_dict is None:
+            if not os.path.isfile(self.dict_path):
+                print("make_new_dict")
+                cols = ["user_id", "content_id", "task_container_id", "prior_question_elapsed_time"]
+                df = pd.read_pickle(MERGE_FILE_PATH)[cols]
+                print("loaded")
+                self.make_dict(df)
+            with open(self.dict_path, "rb") as f:
+                self.target_dict = pickle.load(f)
+
+        self.logger.info(f"elapsed_time")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+
+
 class FeatureFactoryManager:
     def __init__(self,
                  feature_factory_dict: Dict[Union[str, tuple],

@@ -34,7 +34,8 @@ from feature_engineering.feature_factory import \
     DurationPreviousContent, \
     ElapsedTimeMeanByContentIdEncoder, \
     UserContentNowRateEncoder, \
-    PastNUserAnswerHistory
+    PastNUserAnswerHistory, \
+    CorrectVsIncorrectMeanEncoder
 from experiment.common import get_logger
 import pickle
 import os
@@ -2827,6 +2828,88 @@ class PartialAggregatorTestCase(unittest.TestCase):
 
         df_expect = pd.DataFrame({
             "past3_user_answer_history": [0.4, 0.1],
+        })
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+    def test_correct_vs_incorrect_make_dict(self):
+        pickle_dir = "./test_dict.pickle"
+        if os.path.isdir(pickle_dir):
+            os.remove(pickle_dir)
+
+        # prepare test data
+        df = pd.DataFrame({"key": [10, 10, 10, 10, 11, 11, 11, 11],
+                           "value": [2, 4, 8, 16, 32, 64, 128, 256],
+                           "answered_correctly": [0, 0, 1, 1, 0, 0, 1, 1]})
+        encoder = CorrectVsIncorrectMeanEncoder(groupby="key", column="value")
+        encoder.make_dict(df, output_dir=pickle_dir)
+
+        # key = (now_content, past1_content, past1_userans, past2_content, past2_userans, past3_content, past3_userans
+        elapsed_time_dict = {
+            (10, 0): 3,
+            (10, 1): 12,
+            (11, 0): 48,
+            (11, 1): 192
+        }
+
+        with open(pickle_dir, "rb") as f:
+            actual = pickle.load(f)
+
+        self.assertEqual(elapsed_time_dict, actual)
+        os.remove(pickle_dir)
+
+    def test_correct_vs_incorrect(self):
+        logger = get_logger()
+
+        # (lecture, question, is_lectured, past_answered)
+        target_dict = {
+            (10, 0): 3,
+            (10, 1): 12,
+            (11, 0): 48,
+            (11, 1): 192
+        }
+
+        feature_factory_dict = {
+            "user_id": {
+                "CorrectVsIncorrectMeanEncoder": CorrectVsIncorrectMeanEncoder(groupby="key",
+                                                                               column="value",
+                                                                               target_dict=target_dict)
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        # prepare test data
+        df = pd.DataFrame({"key": [10, 10, 10, 10, 11, 11, 11, 11, 12],
+                           "value": [2, 4, 8, 16, 32, 64, 128, 256, 512],
+                           "answered_correctly": [0, 0, 1, 1, 0, 0, 1, 1, 1]})
+
+        df_expect = pd.DataFrame({
+            # "incorrect_mean": [3]*4 + [48]*4 + [np.nan],
+            # "correct_mean": [12]*4 + [192]*4 + [np.nan],
+            "diff_value_groupby_key_vs_incorrect_mean": [2-3, 4-3, 8-3, 16-3, 32-48, 64-48, 128-48, 256-48, np.nan],
+            "diff_value_groupby_key_vs_correct_mean": [2-12, 4-12, 8-12, 16-12, 32-192, 64-192, 128-192, 256-192, np.nan]
+        })
+
+        df_expect = df_expect.astype("float32")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        df = pd.DataFrame({"key": [10, 10, 12],
+                           "value": [512, 1024, 2048]})
+
+        df_expect = pd.DataFrame({
+            # "incorrect_mean": [3]*2 + [np.nan],
+            # "correct_mean": [12]*2 + [np.nan],
+            "diff_value_groupby_key_vs_incorrect_mean": [512-3, 1024-3, np.nan],
+            "diff_value_groupby_key_vs_correct_mean": [512-12, 1024-12, np.nan]
         })
 
         df_expect = df_expect.astype("float32")
