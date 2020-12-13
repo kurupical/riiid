@@ -647,6 +647,58 @@ class ContentIdTargetEncoderAggregator(FeatureFactory):
     def __repr__(self):
         return f"{self.__class__.__name__}"
 
+
+class DurationFeaturePostProcess(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = False,
+                 save_feature: bool = False,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.make_col_name = "content_id_target_encode_aggregator"
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return self._predict(df)
+
+    def _predict(self,
+                 df: pd.DataFrame):
+
+        df["timediff_vs_studytime_userid_priorq"] = (
+            df["duration_previous_content_cap100k"] - df["mean_study_time_by_['user_id', 'prior_question_had_explanation']"]
+        ).astype("int32")
+        df["timediff-elapsedtime"] = (df["duration_previous_content_cap100k"] - df["elapsed_time_content_id_mean"]).astype("int32")
+        return df
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"te_content_id")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
+
 class TargetEncoderAggregator(FeatureFactory):
     feature_name_base = ""
 
