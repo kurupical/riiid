@@ -4004,6 +4004,53 @@ class StudyTermEncoder(FeatureFactory):
     def __repr__(self):
         return f"{self.__class__.__name__}"
 
+class StudyTermEncoder2(FeatureFactory):
+    feature_name_base = ""
+
+    def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = False,
+                 save_feature: bool = False,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.make_col_name = "study_time2"
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
+        pass
+
+    def make_feature(self,
+                     df: pd.DataFrame):
+        return df
+
+    def _predict(self,
+                 df: pd.DataFrame):
+        df["study_time"] = df["duration_previous_content_cap100k"] - df["prior_question_elapsed_time"]
+        df["study_time"] = df["study_time"].fillna(-1).astype("int32")
+        return df
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"tags_all")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
+
 
 class ElapsedTimeVsShiftDiffEncoder(FeatureFactory):
 
