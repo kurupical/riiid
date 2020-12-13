@@ -2553,5 +2553,93 @@ class PartialAggregatorTestCase(unittest.TestCase):
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
 
+    def test_question_user_content_now_rate_encoder(self):
+        logger = get_logger()
+
+        # (lecture, question, is_lectured, past_answered)
+        content_rate_dict = {
+            1: 1700,
+            2: 1600,
+            3: 1500,
+            4: 1400
+        }
+        feature_factory_dict = {
+            "user_id": {
+                "UserContentRateEncoder": UserContentNowRateEncoder(column="part",
+                                                                    target=[2, 5],
+                                                                    rate_func="simple",
+                                                                    content_rate_dict=content_rate_dict)
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+
+        user1_content_id = [1, 2, 3, 3, 4]
+        user1_content_type_id = [0, 0, 1, 0, 0]
+        user1_part = [2, 5, np.nan, 2, 5]
+        user1_answered_correctly = [1, 1, np.nan, 0, 1]
+
+        user2_content_id = [1, 2, 3]
+        user2_content_type_id = [0, 0, 0]
+        user2_part = [2, 5, 2]
+        user2_answered_correctly = [0, 0, 0]
+
+        user_id = [1]*5 + [2]*3
+        content_id = user1_content_id + user2_content_id
+        part = user1_part + user2_part
+        content_type_id = user1_content_type_id + user2_content_type_id
+        answered_correctly = user1_answered_correctly + user2_answered_correctly
+        df = pd.DataFrame({"user_id": user_id,
+                           "content_id": content_id,
+                           "part": part,
+                           "content_type_id": content_type_id,
+                           "answered_correctly": answered_correctly})
+
+        # [user 1 - part 2]
+        # 1. win 16 + (1700-1500)*0.04 = 24! 1500 -> 1524
+        # 3. lose 16 + (1524-1500)*0.04 = 16! 1524 -> 1508
+        u1_p2_rate = [1500, 1524, 1524, 1524, 1508]
+        # 2. win 16 + (1600-1500)*0.04 = 20! 1500 -> 1520
+        # 4. win 16 + (1400-1520)*0.04 = 12! 1520 -> 1532
+        u1_p5_rate = [1500, 1500, 1520, 1520, 1520]
+
+        # [user 2]
+        # 1. lose 16 + (1500-1700)*0.04 = 8! 1500 -> 1492
+        # 3. lose 16 + (1480-1500)*0.04 = 16! 1492 -> 1476
+        u2_p2_rate = [1500, 1492, 1492]
+        # 2. lose 16 + (1500-1600)*0.04 = 12! 1500 -> 1488
+        u2_p5_rate = [1500, 1500, 1488]
+
+        df_expect = pd.DataFrame({
+            "content_rating": [1700, 1600, np.nan, 1500, 1400, 1700, 1600, 1500],
+            "part2_rating": u1_p2_rate + u2_p2_rate,
+            "part5_rating": u1_p5_rate + u2_p5_rate
+        })
+
+        df_expect = df_expect.fillna(-1).astype("int16")
+        df_actual = agger.all_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+
+        df = pd.DataFrame({"user_id": [1, 2, 2, 3, 3],
+                           "content_id": [1, 2, 1, 2, 5],
+                           "part": [2, 5, 2, 5, np.nan],
+                           "content_type_id": [0, 0, 0, 0, 1]})
+
+        df_expect = pd.DataFrame({
+            "content_rating": [1700, 1600, 1700, 1600, np.nan],
+            "part2_rating": [1508, 1476, 1476, 1500, np.nan],
+            "part5_rating": [1532, 1488, 1488, 1500, np.nan]
+        })
+
+        df_expect = df_expect.fillna(-1).astype("int16")
+        df_actual = agger.partial_predict(df)
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
 if __name__ == "__main__":
     unittest.main()
