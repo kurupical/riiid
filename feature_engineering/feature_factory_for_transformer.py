@@ -7,6 +7,8 @@ import tqdm
 import glob
 from logging import Logger
 import copy
+MERGE_FILE_PATH = "../input/riiid-test-answer-prediction/train_merged.pickle"
+
 
 def calc_sec(x, max_sec=300):
     ret = x//1000
@@ -27,10 +29,6 @@ class FeatureFactoryForTransformer:
         self.logger = logger
         self.data_dict = {}
 
-        if self.dict_path is not None:
-            self.make_dict()
-        else:
-            self.embbed_dict = embbed_dict
         self._init_for_partial_predict()
 
     def _init_for_partial_predict(self):
@@ -54,15 +52,13 @@ class FeatureFactoryForTransformer:
                 self.index_dict[key] = [self.target_cols.index(x) for x in key]
         print(self.target_cols)
 
-    def make_dict(self):
-        df = None
+    def make_dict(self, df):
         for key, value in self.column_config.items():
             if value["type"] == "category":
                 dict_dir = f"{self.dict_path}/{key}_for_transformer.pickle"
                 if not os.path.isfile(dict_dir):
                     if df is None:
                         print("make_new_dict")
-                        files = glob.glob("../input/riiid-test-answer-prediction/split10/*.pickle")
                         target_cols = []
                         for k in self.column_config.keys():
                             if type(k) == str:
@@ -70,7 +66,7 @@ class FeatureFactoryForTransformer:
                             else: # tuple
                                 target_cols.extend(list(k))
 
-                        df = pd.concat([pd.read_pickle(f).sort_values(["user_id", "timestamp"])[target_cols] for f in files])
+                        df = df[target_cols]
                         print("loaded")
                     self._make_dict(df=df, column=key, output_dir=dict_dir)
                 with open(dict_dir, "rb") as f:
@@ -133,6 +129,10 @@ class FeatureFactoryForTransformer:
     def all_predict(self,
                     df: pd.DataFrame):
         self.logger.info("all_predict_for_transformer")
+
+        if self.dict_path is not None:
+            self.make_dict(df)
+
         group = {}
         for user_id, w_df in tqdm.tqdm(df.groupby("user_id")):
             w_dict = {}

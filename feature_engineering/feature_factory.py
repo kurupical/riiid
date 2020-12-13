@@ -4829,7 +4829,7 @@ class CorrectVsIncorrectMeanEncoder(FeatureFactory):
         self.is_partial_fit = is_partial_fit
         self.is_debug = is_debug
         self.data_dict = {}
-        self.dict_path = f"../feature_engineering/correct_vs_incorrect_{groupby}_{column}_min{min_size}.pickle"
+        self.dict_path = f"../feature_engineering/correct_vs_incorrect_{groupby}_{column}_min{min_size}_{model_id}.pickle"
         self.make_col_name = "correct_vs_incorrect"
         self.target_dict = target_dict
 
@@ -4882,14 +4882,11 @@ class CorrectVsIncorrectMeanEncoder(FeatureFactory):
         if self.target_dict is None:
             if not os.path.isfile(self.dict_path):
                 print("make_new_dict")
-                cols = ["user_id", "content_id", "task_container_id", "prior_question_elapsed_time"]
-                df = pd.read_pickle(MERGE_FILE_PATH)[cols]
-                print("loaded")
                 self.make_dict(df)
             with open(self.dict_path, "rb") as f:
                 self.target_dict = pickle.load(f)
 
-        self.logger.info(f"elapsed_time")
+        self.logger.info(f"correct_vs_incorrect")
 
         return self._predict(df)
 
@@ -4998,12 +4995,14 @@ class FeatureFactoryManager:
         for dicts in self.feature_factory_dict.values():
             for factory in dicts.values():
                 if factory.is_partial_fit:
+                    self.logger.info(factory)
                     df = factory.all_predict(df=df)
 
         # partial_predictなし
         for dicts in self.feature_factory_dict.values():
             for factory in dicts.values():
                 if not factory.is_partial_fit:
+                    self.logger.info(factory)
                     df = factory.all_predict(df=df)
         return df
 
