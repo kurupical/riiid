@@ -2553,6 +2553,103 @@ class PartialAggregatorTestCase(unittest.TestCase):
         pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
 
 
+    def test_fit_shiftdiffforts(self):
+        """
+        nunique
+        :return:
+        """
+        u1_task_id = [1, 2, 2, 3, 4, 5]
+        u1_timestamp = [0, 10, 10, 20, 40, 80]
+
+        u2_task_id = [1, 1, 2]
+        u2_timestamp = [0, 0, 10]
+
+        u3_task_id = [1, 2]
+        u3_timestamp = [0, 200_000]
+        df = pd.DataFrame({
+            "user_id": [1]*6 + [2]*3 + [3]*2,
+            "task_container_id": u1_task_id + u2_task_id + u3_task_id,
+            "timestamp": u1_timestamp + u2_timestamp + u3_timestamp,
+            "answered_correctly": [0]*11
+        })
+
+        logger = get_logger()
+        feature_factory_dict = {
+            "user_id": {
+                "ShiftDiffEncoderForTimestamp": DurationPreviousContent()
+            }
+        }
+        agger = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
+                                      logger=logger)
+        # predict_all
+        u1_expect = [0, 10/2, 10/2, 10, 20, 40]
+        u2_expect = [0, 0, 10]
+        u3_expect = [0, 200_000]
+        u3_expect_cap = [0, 100_000]
+        expect_normal = u1_expect + u2_expect + u3_expect
+        expect_cap = u1_expect + u2_expect + u3_expect_cap
+        df_expect = pd.DataFrame({
+            "duration_previous_content": expect_normal,
+            "duration_previous_content_cap100k": expect_cap,
+        }).astype("uint32")
+
+        df_actual = agger.all_predict(df)
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+        # fit
+        agger.fit(df)
+
+        # partial predict
+        df = pd.DataFrame({
+            "user_id": [1]*3 + [4]*3,
+            "task_container_id": [6, 6, 7, 1, 1, 2],
+            "timestamp": [160, 160, 320, 0, 0, 150_000]
+        })
+        df_actual = agger.partial_predict(df)
+
+        df_expect = pd.DataFrame({
+            "duration_previous_content": [80/2, 80/2, 160, 0, 0, 150_000],
+            "duration_previous_content_cap100k": [80/2, 80/2, 160, 0, 0, 100_000],
+        }).astype("uint32")
+
+        pd.testing.assert_frame_equal(df_expect, df_actual[df_expect.columns])
+
+    def test_elapsed_time_create_dict2(self):
+        pickle_dir = "./test_dict.pickle"
+        if os.path.isdir(pickle_dir):
+            os.remove(pickle_dir)
+
+        # prepare test data
+        u1_content_id = [1, 2, 3, 4, 5, 6]
+        u1_task_id = [1, 2, 2, 3, 3, 4]
+        u1_p_elapsed_time = [np.nan, 10, 10, 20, 20, 40]
+
+        u2_content_id = [3, 2, 1]
+        u2_task_id = [1, 2, 3]
+        u2_p_elapsed_time = [np.nan, 80, 160]
+
+        df = pd.DataFrame({"user_id": [1]*6 + [2]*3,
+                           "content_id": u1_content_id + u2_content_id,
+                           "task_container_id": u1_task_id + u2_task_id,
+                           "prior_question_elapsed_time": u1_p_elapsed_time + u2_p_elapsed_time})
+        encoder = ElapsedTimeMeanByContentIdEncoder(elapsed_time_dict={})
+
+        encoder.make_dict(df, output_dir=pickle_dir)
+
+        elapsed_time_dict = {
+            1: 10,
+            2: (20+160)/2,
+            3: (20+80)/2,
+            4: 40,
+            5: 40
+        }
+
+        with open(pickle_dir, "rb") as f:
+            actual = pickle.load(f)
+
+        self.assertEqual(elapsed_time_dict, actual)
+        os.remove(pickle_dir)
+
     def test_question_user_content_now_rate_encoder(self):
         logger = get_logger()
 
