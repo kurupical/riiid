@@ -3112,7 +3112,12 @@ class UserContentRateEncoder(FeatureFactory):
         self.content_rate_dict = content_rate_dict
         self.dict_path = f"../feature_engineering/content_{self.column}_{rate_func}_rate_dict.pickle"
         self.make_col_name = f"{self.feature_name_base}_{self.column}_{rate_func}_rate_dict.pickle"
-
+        if self.content_rate_dict is None:
+            if os.path.isfile(self.dict_path):
+                with open(self.dict_path, "rb") as f:
+                    self.content_rate_dict = pickle.load(f)
+        else:
+            self.content_rate_dict = self.content_rate_dict
     def make_dict(self,
                   df: pd.DataFrame,
                   output_dir: str=None):
@@ -3321,6 +3326,12 @@ class UserContentNowRateEncoder(FeatureFactory):
         self.content_rate_dict = content_rate_dict
         self.dict_path = f"../feature_engineering/content_['user_id', 'part']_{rate_func}_rate_dict.pickle"
         self.make_col_name = f"{self.feature_name_base}_{self.column}_{rate_func}_rate_dict_{self.target}"
+        if self.content_rate_dict is None:
+            if os.path.isfile(self.dict_path):
+                with open(self.dict_path, "rb") as f:
+                    self.content_rate_dict = pickle.load(f)
+        else:
+            self.content_rate_dict = content_rate_dict
 
     def make_dict(self,
                   df: pd.DataFrame,
@@ -4784,7 +4795,6 @@ class PastNUserAnswerHistory(FeatureFactory):
             ret = [content_id]
 
             if user_id in self.data_dict:
-                print(self.data_dict[user_id])
                 ret.extend(self.data_dict[user_id])
 
             key_length = self.past_n*2 + 1
@@ -4792,7 +4802,6 @@ class PastNUserAnswerHistory(FeatureFactory):
                 ret += [-1] * (key_length - len(ret))
 
             ret = tuple(ret)
-            print(ret)
 
             if ret in self.userans_te_dict:
                 return self.userans_te_dict[ret]
@@ -4832,6 +4841,10 @@ class CorrectVsIncorrectMeanEncoder(FeatureFactory):
         self.dict_path = f"../feature_engineering/correct_vs_incorrect_{groupby}_{column}_min{min_size}_{model_id}.pickle"
         self.make_col_name = "correct_vs_incorrect"
         self.target_dict = target_dict
+        if self.target_dict is None:
+            if os.path.isfile(self.dict_path):
+                with open(self.dict_path, "rb") as f:
+                    self.target_dict = pickle.load(f)
 
     def make_dict(self,
                   df: pd.DataFrame,
