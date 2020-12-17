@@ -99,7 +99,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
             "part": {1: 1, 3: 2}
         }
         agger = FeatureFactoryForTransformer(column_config={"content_id": {"type": "category"},
-                                                            "part": {"type": "category"}},
+                                                            "part": {"type": "category"},
+                                                            "answered_correctly": {"type": "leakage_feature"}},
                                              dict_path=None,
                                              embbed_dict=embbed_dict,
                                              sequence_length=2,
@@ -180,7 +181,8 @@ class PartialAggregatorTestCase(unittest.TestCase):
         embbed_dict = {
             ("content_id", "content_type_id"): {(1, 1): 1, (1, 2): 2, (2, 1): 3, (2, 2): 4},
         }
-        agger = FeatureFactoryForTransformer(column_config={("content_id", "content_type_id"): {"type": "category"}},
+        agger = FeatureFactoryForTransformer(column_config={("content_id", "content_type_id"): {"type": "category"},
+                                                            "answered_correctly": {"type": "leakage_feature"}},
                                              dict_path=None,
                                              embbed_dict=embbed_dict,
                                              sequence_length=2,
@@ -220,30 +222,86 @@ class PartialAggregatorTestCase(unittest.TestCase):
         }
         self.assertEqual(expect, actual)
 
+    def test_normal_numeric(self):
+        logger = get_logger()
 
-    def test_make_dict_have_function(self):
-
-        agger = FeatureFactoryForTransformer(column_config={"part": {"type": "category",
-                                                                     "function": calc_sec}},
+        embbed_dict = {
+            "content_id": {1: 1, 2: 2, 4: 3, 5: 4, 7: 5},
+            "part": {1: 1, 3: 2}
+        }
+        agger = FeatureFactoryForTransformer(column_config={"content_id": {"type": "category"},
+                                                            "part": {"type": "numeric"},
+                                                            "answered_correctly": {"type": "leakage_feature"}},
                                              dict_path=None,
-                                             sequence_length=10,
-                                             logger=None)
+                                             embbed_dict=embbed_dict,
+                                             sequence_length=2,
+                                             logger=logger)
+        df = pd.DataFrame({"user_id": [1, 1, 1, 1, 2, 2, 3],
+                           "content_id": [1, 2, 4, 5, 7, 1, 2],
+                           "answered_correctly": [1, 1, 1, 0, 1, 1, 1],
+                           "part": [1, 1, 3, 1, 1, 3, 1],
+                           "is_val": [0, 0, 0, 0, 0, 1, 1]})
 
-        df = pd.DataFrame({"timestamp": [1, 1, 2, 2, 2, np.nan]})
-
-        pickle_dir = "./test.pickle"
-
-        agger._make_dict(df=df,
-                         column="part",
-                         output_dir=pickle_dir)
-
-        with open(pickle_dir, "rb") as f:
-            actual = pickle.load(f)
-
-        expect = {-1: 1,
-                  1: 2,
-                  2: 3}
+        actual = agger.all_predict(df)
+        expect = {
+            1: {"content_id": [1, 2, 3, 4],
+                "part": [1, 1, 3, 1],
+                "answered_correctly": [1, 1, 1, 0],
+                "is_val": [0, 0, 0, 0]},
+            2: {"content_id": [5, 1],
+                "part": [1, 3],
+                "answered_correctly": [1, 1],
+                "is_val": [0, 1]},
+            3: {"content_id": [2],
+                "part": [1],
+                "answered_correctly": [1],
+                "is_val": [1]}
+        }
 
         self.assertEqual(expect, actual)
-        os.remove(pickle_dir)
+
+        # fit/partial_predict <1>
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        df = pd.DataFrame({"user_id": [1, 2, 3, 4],
+                           "content_id": [1, 1, 1, 2],
+                           "part": [3, 3, 3, 3],
+                           "answered_correctly": [0, 0, 0, 0]})
+
+        actual = agger.partial_predict(df)
+        expect = {
+            0: {"content_id": [4, 1],
+                "part": [1, 3],
+                "answered_correctly": [0, -1]},
+            1: {"content_id": [1, 1],
+                "part": [3, 3],
+                "answered_correctly": [1, -1]},
+            2: {"content_id": [2, 1],
+                "part": [1, 3],
+                "answered_correctly": [1, -1]},
+            3: {"content_id": [2],
+                "part": [3],
+                "answered_correctly": [-1]}
+        }
+        self.assertEqual(expect, actual)
+
+        # fit/partial_predict <2>
+        for i in range(len(df)):
+            agger.fit(df.iloc[i:i+1])
+
+        df = pd.DataFrame({"user_id": [2, 3],
+                           "content_id": [2, 4],
+                           "part": [1, 1]})
+
+        actual = agger.partial_predict(df)
+        expect = {
+            0: {"content_id": [1, 2],
+                "part": [3, 1],
+                "answered_correctly": [0, -1]},
+            1: {"content_id": [1, 3],
+                "part": [3, 1],
+                "answered_correctly": [0, -1]}
+        }
+        self.assertEqual(expect, actual)
 

@@ -35,7 +35,7 @@ class FeatureFactoryForTransformer:
         self.target_cols = ["user_id"]
         self.index_dict = {}
         for k in self.column_config.keys():
-            if k in ["user_answer"]:
+            if self.column_config[k]["type"] == "leakage_feature":
                 continue
             if type(k) == str:
                 self.target_cols.append(k)
@@ -44,7 +44,7 @@ class FeatureFactoryForTransformer:
 
         columns = list(self.column_config.keys())
         for index, key in enumerate(columns):
-            if key in ["user_answer"]:
+            if self.column_config[key]["type"] == "leakage_feature":
                 continue
             if type(key) == str:
                 self.index_dict[key] = self.target_cols.index(key)
@@ -71,9 +71,6 @@ class FeatureFactoryForTransformer:
                     self._make_dict(df=df, column=key, output_dir=dict_dir)
                 with open(dict_dir, "rb") as f:
                     self.embbed_dict[key] = pickle.load(f)
-            else:
-                raise NotImplementedError
-
 
     def _make_dict(self,
                    df: pd.DataFrame,
@@ -100,25 +97,30 @@ class FeatureFactoryForTransformer:
         for user_id, w_df in df.groupby("user_id"):
             if user_id not in self.data_dict:
                 self.data_dict[user_id] = {}
-                for key, embbed_dict in self.embbed_dict.items():
-                    if type(key) == tuple:
-                        self.data_dict[user_id][key] = [embbed_dict[tuple(x)] for x in w_df[list(key)].values]
+                for key in self.column_config.keys():
+                    if self.column_config[key]["type"] == "category":
+                        embbed_dict = self.embbed_dict[key]
+                        if type(key) == tuple:
+                            self.data_dict[user_id][key] = [embbed_dict[tuple(x)] for x in w_df[list(key)].values][-self.sequence_length:]
+                        else:
+                            self.data_dict[user_id][key] = [embbed_dict[x] for x in w_df[key].values][-self.sequence_length:]
                     else:
-                        self.data_dict[user_id][key] = [embbed_dict[x] for x in w_df[key].values]
-                self.data_dict[user_id]["answered_correctly"] = w_df["answered_correctly"].values.tolist()
+                        self.data_dict[user_id][key] = w_df[key].values[-self.sequence_length:].tolist()
+
             else:
-                for key, embbed_dict in self.embbed_dict.items():
-                    if type(key) == tuple:
-                        self.data_dict[user_id][key] = \
-                            self.data_dict[user_id][key] + [embbed_dict[tuple(x)] for x in w_df[list(key)].values]
-                        self.data_dict[user_id][key] = self.data_dict[user_id][key][-self.sequence_length:]
+                for key in self.column_config.keys():
+                    if self.column_config[key]["type"] == "category":
+                        embbed_dict = self.embbed_dict[key]
+                        if type(key) == tuple:
+                            self.data_dict[user_id][key] = \
+                                self.data_dict[user_id][key] + [embbed_dict[tuple(x)] for x in w_df[list(key)].values]
+                        else:
+                            self.data_dict[user_id][key] = \
+                                self.data_dict[user_id][key] + [embbed_dict[x] for x in w_df[key].values]
                     else:
-                        self.data_dict[user_id][key] = \
-                            self.data_dict[user_id][key] + [embbed_dict[x] for x in w_df[key].values]
-                        self.data_dict[user_id][key] = self.data_dict[user_id][key][-self.sequence_length:]
-                self.data_dict[user_id]["answered_correctly"] = \
-                    self.data_dict[user_id]["answered_correctly"] + w_df["answered_correctly"].values.tolist()
-            self.data_dict[user_id]["answered_correctly"] = self.data_dict[user_id]["answered_correctly"][-self.sequence_length:]
+                        self.data_dict[user_id][key] = self.data_dict[user_id][key] + w_df[key].values.tolist()
+                    self.data_dict[user_id][key] = self.data_dict[user_id][key][-self.sequence_length:]
+
         return self
 
     def fit(self,
@@ -136,13 +138,15 @@ class FeatureFactoryForTransformer:
         group = {}
         for user_id, w_df in tqdm.tqdm(df.groupby("user_id")):
             w_dict = {}
-            for key, embbed_dict in self.embbed_dict.items():
-                if type(key) == tuple:
-                    w_dict[tuple(key)] = [embbed_dict[tuple(x)] for x in w_df[list(key)].values]
+            for key in self.column_config.keys():
+                if self.column_config[key]["type"] == "category":
+                    embbed_dict = self.embbed_dict[key]
+                    if type(key) == tuple:
+                        w_dict[tuple(key)] = [embbed_dict[tuple(x)] for x in w_df[list(key)].values]
+                    else:
+                        w_dict[key] = [embbed_dict[x] for x in w_df[key].values]
                 else:
-                    w_dict[key] = [embbed_dict[x] for x in w_df[key].values]
-            w_dict["answered_correctly"] = w_df["answered_correctly"].values.tolist()
-            w_dict["user_answer"] = w_df["user_answer"].values.tolist()
+                    w_dict[key] = w_df[key].values.tolist()
             w_dict["is_val"] = w_df["is_val"].values.tolist()
             group[user_id] = w_dict
         return group
@@ -154,24 +158,23 @@ class FeatureFactoryForTransformer:
             user_id = x[0]
 
             if user_id not in self.data_dict:
-                ret_dict = {x: [] for x in self.index_dict.keys()}
-                ret_dict["answered_correctly"] = []
-                ret_dict["user_answer"] = []
+                ret_dict = {x: [] for x in self.column_config.keys()}
             else:
                 ret_dict = copy.copy(self.data_dict[user_id])
 
-            for key, index in self.index_dict.items():
-                if type(key) == tuple:
-                    ret_dict[key] = ret_dict[key] + [self.embbed_dict[key][tuple(x[index])]]
-                    ret_dict[key] = ret_dict[key][-self.sequence_length:]
-                else:
-                    ret_dict[key] = ret_dict[key] + [self.embbed_dict[key][x[index]]]
-                    ret_dict[key] = ret_dict[key][-self.sequence_length:]
-
-            ret_dict["user_answer"] = ret_dict["user_answer"] + [-1]
-            ret_dict["user_answer"] = ret_dict["user_answer"][-self.sequence_length:]
-            ret_dict["answered_correctly"] = ret_dict["answered_correctly"] + [-1]  # we can't see future
-            ret_dict["answered_correctly"] = ret_dict["answered_correctly"][-self.sequence_length:]
+            for key in self.column_config.keys():
+                if self.column_config[key]["type"] == "category":
+                    index = self.index_dict[key]
+                    if type(key) == tuple:
+                        ret_dict[key] = ret_dict[key] + [self.embbed_dict[key][tuple(x[index])]]
+                    else:
+                        ret_dict[key] = ret_dict[key] + [self.embbed_dict[key][x[index]]]
+                elif self.column_config[key]["type"] == "numeric":
+                    index = self.index_dict[key]
+                    ret_dict[key] = ret_dict[key] + [x[index]]
+                elif self.column_config[key]["type"] == "leakage_feature":
+                    ret_dict[key] = ret_dict[key] + [-1]
+                ret_dict[key] = ret_dict[key][-self.sequence_length:]
             # self.data_dict[user_id] = ret_dict
             return ret_dict
 
