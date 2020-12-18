@@ -680,7 +680,7 @@ class DurationFeaturePostProcess(FeatureFactory):
                  df: pd.DataFrame):
 
         df["timediff_vs_studytime_userid_priorq"] = (
-            df["duration_previous_content_cap100k"] - df["mean_study_time_by_['user_id', 'prior_question_had_explanation']"]
+            df["duration_previous_content_cap100k"] - df["mean_study_time_by_user_id"]
         ).astype("int32")
         df["timediff-elapsedtime"] = (df["duration_previous_content_cap100k"] - df["elapsed_time_content_id_mean"]).astype("int32")
         return df
@@ -3846,6 +3846,100 @@ class PreviousNAnsweredCorrectly(FeatureFactory):
         return f"{self.__class__.__name__}(key={self.column})"
 
 
+class PreviousNSameContentIdAnsweredCorrectly(FeatureFactory):
+    """
+    過去N回のanswered_correctlyを文字列として結合する
+    ただし:
+    bundle_idが同じものは,最後のbundle_idが終わるまで答えがわからないので、8
+    partial_predictで答え未知の場合は、8
+    lecture(content_type_id=1)の場合は、9
+    をそれぞれ設定する。
+    """
+    def __init__(self,
+                 n: int,
+                 column: str = ("user_id", "content_id"),
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 split_num: int = 1,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.n = n
+        self.column = column
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.split_num = split_num
+        self.data_dict = {}
+        self.is_partial_fit = is_partial_fit
+        self.make_col_name = f"previous_{n}_same_content_id_ans"
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[Union[str, tuple],
+                                       Dict[str, object]],
+            is_first_fit: bool):
+        group = df.groupby(self.column)
+        for key, w_df in group:
+            ans = "".join(w_df["answered_correctly"].fillna(9).astype(int).astype(str).values[::-1].tolist())
+            ans = ans[:self.n]
+            if key not in self.data_dict:
+                self.data_dict[key] = ans
+            else:
+                self.data_dict[key] = ans + self.data_dict[key][len(ans):]
+                self.data_dict[key] = self.data_dict[key][:self.n]
+
+        return self
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        def g(x):
+            rets = [""]
+            ret = [] # データに記録される数値
+            w_ret = [] # 正しい数値
+            for s in x.values:
+                if np.isnan(s):
+                    ret = [9] + ret
+                    w_ret = [9] + w_ret
+                else:
+                    ret = [s] + ret
+                    w_ret = [s] + w_ret
+                if s >= 0:
+                    ret = w_ret
+                ret = ret[:self.n]
+                rets.append("".join([str(int(x)) for x in ret]))
+            return rets[:-1]
+        df[self.make_col_name] = df.groupby(["user_id", "content_id"])["answered_correctly"].progress_transform(g)
+
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        def f(user_id, content_id, content_type_id):
+            key = (user_id, content_id)
+            if key not in self.data_dict:
+                if is_update:
+                    self.data_dict[key] = ""
+                ret = ""
+            else:
+                ret = self.data_dict[key]
+
+            if is_update:
+                if content_type_id == 1:
+                    self.data_dict[key] = ("9" + self.data_dict[key])[:self.n]
+                else:
+                    self.data_dict[key] = ("8" + self.data_dict[key])[:self.n]
+            return ret
+
+        df[self.make_col_name] = [f(x[0], x[1], x[2]) for x in df[["user_id", "content_id", "content_type_id"]].values]
+        return df
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(key={self.column})"
+
+
 
 class WeightDecayTargetEncoder(FeatureFactory):
     feature_name_base = "weighted_te_user_id"
@@ -4350,6 +4444,12 @@ class PastNFeatureEncoder(FeatureFactory):
                 if agg_func == "vslast":
                     df[f"past{past_n}_{self.column}_vslast"] = [x[-1] - x[-past_n] if len(x) >= past_n else np.nan for x in values]
                     df[f"past{past_n}_{self.column}_vslast"] = df[f"past{past_n}_{self.column}_vslast"].astype("float32")
+                if agg_func == "std":
+                    df[f"past{past_n}_{self.column}_mean"] = [np.array(x[-past_n:]).std() if len(x) > 0 else np.nan for x in values]
+                    df[f"past{past_n}_{self.column}_mean"] = df[f"past{past_n}_{self.column}_std"].astype("float32")
+                if agg_func == "nunique":
+                    df[f"past{past_n}_{self.column}_mean"] = [np.array(x[-past_n:]).nunique() if len(x) > 0 else np.nan for x in values]
+                    df[f"past{past_n}_{self.column}_mean"] = df[f"past{past_n}_{self.column}_nunique"].astype("float32")
 
         return df
 
@@ -4518,18 +4618,24 @@ class DurationPreviousContent(FeatureFactory):
     feature_name_base = ""
 
     def __init__(self,
+                 groupby: Union[str, list] = "user_id",
                  model_id: str = None,
                  load_feature: bool = None,
                  save_feature: bool = None,
                  logger: Union[Logger, None] = None,
                  is_partial_fit: bool = False):
+        self.groupby = groupby
         self.column = "timestamp"
         self.logger = logger
         self.load_feature = load_feature
         self.save_feature = save_feature
         self.model_id = model_id
         self.is_partial_fit = is_partial_fit
-        self.make_col_name = "duration_previous_content"
+        if self.groupby == "user_id":
+            self.make_col_name = f"duration_previous_content"
+        else:
+            self.make_col_name = f"duration_previous_content_{self.groupby}"
+
         self.data_dict = {}
 
     def fit(self,
@@ -4537,7 +4643,7 @@ class DurationPreviousContent(FeatureFactory):
             feature_factory_dict: Dict[Union[str, tuple],
                                        Dict[str, object]],
             is_first_fit: bool):
-        group = df.groupby("user_id")
+        group = df.groupby(self.groupby)
         if len(self.data_dict) == 0:
             self.data_dict = group[self.column].last().to_dict()
         else:
@@ -4547,9 +4653,9 @@ class DurationPreviousContent(FeatureFactory):
 
     def _all_predict_core(self,
                     df: pd.DataFrame):
-        df[self.make_col_name] = df[self.column] - df.groupby("user_id")[self.column].shift(1)
+        df[self.make_col_name] = df[self.column] - df.groupby(self.groupby)[self.column].shift(1)
         df[self.make_col_name] = df[self.make_col_name].replace(0, np.nan)
-        df[self.make_col_name] = df.groupby("user_id")[self.make_col_name].fillna(method="ffill")
+        df[self.make_col_name] = df.groupby(self.groupby)[self.make_col_name].fillna(method="ffill")
         df[self.make_col_name] = df[self.make_col_name] / df.groupby(["user_id", "task_container_id"])["user_id"].transform("count")
         df[self.make_col_name] = df[self.make_col_name].fillna(0).astype("uint32")
         df[f"{self.make_col_name}_cap100k"] = [x if x < 100000 else 100000 for x in df[self.make_col_name].values]
@@ -4564,7 +4670,9 @@ class DurationPreviousContent(FeatureFactory):
         :param df:
         :return:
         """
-        groupby_values = df["user_id"].values
+        groupby_values = df[self.groupby].values
+        if type(self.groupby) == list:
+            groupby_values = [tuple(x) for x in groupby_values]
 
         def f(idx):
             """
@@ -4573,22 +4681,23 @@ class DurationPreviousContent(FeatureFactory):
             :param idx:
             :return:
             """
+
             if groupby_values[idx] in self.data_dict:
                 return self.data_dict[groupby_values[idx]]
             else:
                 return 0
 
-        w_diff = df.groupby("user_id")[self.column].shift(1)
+        w_diff = df.groupby(self.groupby)[self.column].shift(1)
         w_diff = [x if not np.isnan(x) else f(idx) for idx, x in enumerate(w_diff.values)]
         df[self.make_col_name] = (df[self.column] - w_diff).replace(0, np.nan)
-        df[self.make_col_name] = df.groupby("user_id")[self.make_col_name].fillna(method="ffill")
+        df[self.make_col_name] = df.groupby(self.groupby)[self.make_col_name].fillna(method="ffill")
         df[self.make_col_name] = df[self.make_col_name] / df.groupby(["user_id", "task_container_id"])["user_id"].transform("count")
         df[self.make_col_name] = df[self.make_col_name].fillna(0).astype("uint32")
         df[f"{self.make_col_name}_cap100k"] = [x if x < 100000 else 100000 for x in df[self.make_col_name].values]
         df[f"{self.make_col_name}_cap100k"] = df[f"{self.make_col_name}_cap100k"].astype("uint32")
 
         if is_update:
-            for key, value in df.groupby("user_id")[self.column].last().to_dict().items():
+            for key, value in df.groupby(self.groupby)[self.column].last().to_dict().items():
                 self.data_dict[key] = value
         return df
 
@@ -4675,6 +4784,56 @@ class ElapsedTimeMeanByContentIdEncoder(FeatureFactory):
     def __repr__(self):
         return f"{self.__class__.__name__}"
 
+class ElapsedTimeBinningEncoder(FeatureFactory):
+
+    def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = False,
+                 save_feature: bool = False,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.data_dict = {}
+        self.make_col_name = "elapsed_time_mean_by_content_id"
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
+        return self
+
+    def _predict(self,
+                 df: pd.DataFrame):
+        df["prior_question_elapsed_time_bin300"] = [x // 1000 if x // 1000 < 300 else 300 for x in
+                                                    df["prior_question_elapsed_time"].fillna(0).values]
+        df["duration_previous_content_bin300"] = [x // 1000 if x // 1000 < 300 else 300 for x in
+                                                  df["duration_previous_content"].fillna(0).values]
+        df["prior_question_elapsed_time_bin300"] = df["prior_question_elapsed_time_bin300"].astype("int16")
+        df["duration_previous_content_bin300"] = df["duration_previous_content_bin300"].astype("int16")
+
+        return df
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+
+        self.logger.info(f"elapsed_time_binning")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
 
 class PastNUserAnswerHistory(FeatureFactory):
 
@@ -4911,6 +5070,53 @@ class CorrectVsIncorrectMeanEncoder(FeatureFactory):
     def __repr__(self):
         return f"{self.__class__.__name__}"
 
+
+class PostProcessSumEncoder(FeatureFactory):
+
+    def __init__(self,
+                 model_id: str = None,
+                 load_feature: bool = False,
+                 save_feature: bool = False,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False,
+                 is_debug: bool = False):
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.logger = logger
+        self.is_partial_fit = is_partial_fit
+        self.is_debug = is_debug
+        self.data_dict = {}
+        self.make_col_name = "elapsed_time_mean_by_content_id"
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
+        return self
+
+    def _predict(self,
+                 df: pd.DataFrame):
+        df["sum_enc_user_id"] = (df["target_enc_user_id"] * df["count_enc_user_id"]).astype("float32")
+        df["sum_enc_['user_id', 'part']"] = (df["target_enc_['user_id', 'part']"] * df["count_enc_['user_id', 'part']"]).astype("float32")
+
+        return df
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+
+        self.logger.info(f"elapsed_time_binning")
+
+        return self._predict(df)
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        return self._predict(df)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}"
 
 
 class FeatureFactoryManager:

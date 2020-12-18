@@ -50,7 +50,6 @@ class FeatureFactoryForTransformer:
                 self.index_dict[key] = self.target_cols.index(key)
             if type(key) == tuple:
                 self.index_dict[key] = [self.target_cols.index(x) for x in key]
-        print(self.target_cols)
 
     def make_dict(self, df):
         for key, value in self.column_config.items():
