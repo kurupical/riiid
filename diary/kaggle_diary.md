@@ -751,7 +751,212 @@ kaggle datasets version -p riiid_code/ --dir-mode "zip" -m "test"
 * ex_224: tags+part(/3) clustering 40 rating -> CV: 0.7889
 * ex_225: targetencoder完全になくす -> CV: 0.7887 (かわらず)
 * ex_226: timeseries part なくす -> CV: 0.7884
+* ex_227: 新PCでex_225と同じ条件 -> CV: 0.7886
+* ex_228: all_data
+* ex_229: shiftdiffはtask_container_idを考慮する -> CV: 0.7887
+* ex_230: study_time と timediff の引き算をいろいろ: user_id/user_id+prior_question_had_explanation -> CV: 0.7889
+* ex_231: ex_230 + (user_id + part)でやってみる -> CV: 0.7888
+* ex_232: elapsed_time_hack (ElapsedTimeMeanByContentIdEncoder) -> CV: 0.7887
+* ex_233: predict_elapsed_time -> CV: 0.7887
+* ex_234: prior_question_elapsed_timeの平均とる -> CV: 0.7890
+* ex_235: part1~part7 rating -> CV: 0.7891
+* ex_236: prior_question_elapsed_timeの平均消す -> CV: 0.7889
+* ex_237: ElapsedTimeをElapsedTimeMeanByContentIdEncoderに入れ替え -> CV: 0.7892
+  ![img.png](img.png)
+  結構大事みたい
+* ex_238: さらにいろいろ -> CV: 0.7888
+
+# 2020/12/13
+## experiment
+* ex_239: ex_237 + timestamp_diff 2, 3, 4, 5 -> CV: 0.7901 (+0.009!)
+* ex_240: ex_237 + timestamp_diff 2 ~ 10 -> CV: 0.7904
+* ex_241: ex_240 + 無駄な特徴を消す(feature importance低いやつ) -> CV: 0.7902
+* ex_242: ex_241 + prior_questionも同じようにして遊んでみる -> CV: 0.7904
+* ex_243: ex_240 + shiftdiffなどのmeanaggregatorのkeyに全部"prior_question_had_explanation"加える -> CV: 0.7903
+* ex_244: ex_243 + past5contentid_useranswerのTE足す -> CV: 0.7904(変化なし)
+* ex_245: ex_243 + past3contentid_useranswerのTE足す -> CV: 0.7905
+* ex_246: ex_245をちゃんと実装 PastNUserAnswerHistory(min_size=500, past_n=3) -> CV: 0.7902
+* ex_247: ex_245をちゃんと実装 PastNUserAnswerHistory(min_size=300, past_n=3) -> CV: 0.7902
+* ex_248: ex_245をちゃんと実装 PastNUserAnswerHistory(min_size=300, past_n=2) -> CV: 0.7904
+* ex_249: ex_248 + 正解・不正解時のduration_previous_content_cap100kとの差を確認  -> CV: 0.7908
+* ex_250: ex_249をまじめに実装した CorrectVsIncorrectMeanEncoder -> CV: 0.7905
+* ex_251: CorrectVsIncorrectMeanEncoderでいろいろ遊ぶ -> CV: 0.7906 (ただし全データでやればもっと伸びる…？)
+  * user_rating
+  * study_time
+  * target_enc_user_id
+* ex_252: ex_251を削る + いったんこれで10fold回してサブするかな～
+## EDA
+* 053_target1_vs_target0_timediff
+
+# 2020/12/14
+## experiments
+* model051: AdamW/scheduler -> CV: 0.7691
+* model052: model051/user_answer -> CV: 0.7691 LB: 0.772
+* model053: model052…SelfAttentionLayer, DecoderはFFNない -> CV: 0.7689
+* model054: nn.Transformer Encoder*2/Decoder*2 -> CV: 0.7743
+* model055: model054 + predict final only + Encoder*2/Decoder*2 -> CV: 0.7410
+* model056: nn.Transformer Encoder*1/Decoder*1 -> CV: 0.8124 !? バグ
+* model057: model054 + predict final only + Encoder*1/Decoder*1 -> CV: 0.7337
+* model058: model054 + Encoder*3/Decoder*3
+* model059: model054 + predict final only + Encoder*3/Decoder*3
+* model060: model054 + lr=1e-4
+
+* ex_253: all_row check -> OOM
+  user_id-TargetEncoder(key=user_id): len=39291 size=16.12MB
+  user_id-DurationPreviousContent(key=timestamp): len=39291 size=3.65MB
+  user_id-PastNFeatureEncoder: len=39291 size=19.41MB
+  user_id-StudyTermEncoder2 error
+  'StudyTermEncoder2' object has no attribute 'data_dict'
+  user_id-ElapsedTimeMeanByContentIdEncoder: len=0 size=0.0MB
+  user_id-CountEncoder(key=user_id): len=39291 size=2.7MB
+  user_id-PastNUserAnswerHistory: len=39291 size=8.1MB
+  user_id-CategoryLevelEncoder(groupby_columns=user_id, agg_column=part): len=38983 size=35.75MB
+  user_id-UserContentNowRateEncoder(key=part): len=39291 size=24.25MB
+  user_id-PreviousAnswer2(key=content_id): len=39291 size=281.79MB
+  user_id-PreviousNAnsweredCorrectly(key=user_id): len=39291 size=4.61MB
+  user_id-QuestionLectureTableEncoder2: len=14796 size=8.55MB
+  user_id-QuestionQuestionTableEncoder2: len=39291 size=162.85MB
+  user_id-UserContentRateEncoder(key=user_id): len=39291 size=3.51MB
+  user_id-PreviousContentAnswerTargetEncoder: len=39291 size=7.28MB
+  content_id-TargetEncoder(key=content_id): len=13509 size=5.7MB
+  content_id-CorrectVsIncorrectMeanEncoder: len=0 size=0.0MB
+  content_id-CorrectVsIncorrectMeanEncoder: len=0 size=0.0MB
+  ('user_id', 'part')-UserContentRateEncoder(key=['user_id', 'part']): len=181877 size=36.68MB
+  ('user_id', 'prior_question_had_explanation')-MeanAggregator(key=['user_id', 'prior_question_had_explanation']): len=109916 size=43.04MB
+  ('user_id', 'prior_question_had_explanation')-MeanAggregator(key=['user_id', 'prior_question_had_explanation']): len=109916 size=43.04MB
+  ('content_id', 'prior_question_had_explanation')-MeanAggregator(key=['content_id', 'prior_question_had_explanation']): len=28880 size=11.4MB
+  ('content_id', 'prior_question_had_explanation')-MeanAggregator(key=['content_id', 'prior_question_had_explanation']): len=28880 size=11.4MB
+  ('part', 'prior_question_had_explanation')-MeanAggregator(key=['part', 'prior_question_had_explanation']): len=17 size=0.01MB
+  ('part', 'prior_question_had_explanation')-MeanAggregator(key=['part', 'prior_question_had_explanation']): len=17 size=0.01MB
+  ('user_id', 'part', 'prior_question_had_explanation')-MeanAggregator(key=['user_id', 'part', 'prior_question_had_explanation']): len=296807 size=114.61MB
+  ('user_id', 'part', 'prior_question_had_explanation')-MeanAggregator(key=['user_id', 'part', 'prior_question_had_explanation']): len=296807 size=114.61MB
+  previous_5_ans-TargetEncoder(key=previous_5_ans): len=438 size=0.2MB
+* ex_254: sum_enc_user_id -> CV: 0.7905
+* ex_255: sum_enc_[user_id/part] -> CV: 0.7909
+* ex_256: takoi-san パラメータ -> CV: 0.7868
+* ex_257: ex_255 + num_leaves=256 -> CV: 0.7900
+* ex_258: prior_had_question 抜き -> 0.7907
+* ex_259: ex_258 + nn
+* ex_260: past_5_answer_correctly(user_id+content_id) : メモリには乗らんだろうけど -> CV: 0.7913
+* ex_261: sum_enc_いったん抜く(メモリ節約) -> CV: 0.7983
+
+# 2020/12/15
+## experiments
+* model056_2: model056のバグ直し(output -> output[:, -1]) -> CV: 0.768
+* ex_262: te_bundle_id, diff(bundle_id, target_enc)
+* ex_263: (user_id/part).timedelta : CV 0.7911(+0.0002)
+* ex_264: ex_263 - UserRatingNow(part) : CV: 0.7908(-0.0003)
+* model061: model055 without mask -> CV: 0.7421(+0.001)
+* model062: model061 + alldata training! ...ただデータ多すぎるので1epochだけにするかな?
+* model063: model055_2 without positional_encoding  -> CV: 0.771
+* ex_265: ex_263 + QL/QQ-table past_n=100->30 -> CV: 0.7906
+* ex_266: ex_263 + fulldata 
+
+## other
+* ensemble exp261(lgbm-0.7983) + model056_2(transformer-0.7678) -> CV: 0.7986(+0.0003)
+* ensemble exp261(lgbm=0.7983) + model055_2(transformer-0.7738) -> CV: 0.7992
+
+# 2020/12/16
+* (model055_2 + 10Mrow) CV: 0.7506
+* model065: model055_2 + xをanswered_correctlyだけにしてみる -> CV: 0.7525
+* model066: model065 + catバージョン(次元少なくなるけど) -> CV: 0.7513
+* model067: model066 embed_sizeをもう少し大きく… -> CV: 0.7508
+* model068: model065 + only decoder -> CV: 0.73xx
+* model069: model065 + only encoder -> CV: 0.7412
+* model070: model065 + all concat + encoder -> CV: 0.7525
+  これかなり学習が早い! (5epoch目で結構いいところまで行った)
+* model071: model070 + positional_encoder -> CV: 0.7484
+* model072: model070 + (prior_q_had_explanation, user_answer) CV: 0.7520
+* model073: model070 + emb layer=4 max epoch=6 cv: 0.7536
+* model074: model070 + emb layer=1 max epoch=8 CV: 0.7520 
+* model075: model072 + ratediff追加, limerobotさんみたいなかんじにした -> max epoch=8 -> CV: 0.7719
+* model076: model072 + FFN変更(dense->layer_norm->dropout->relu) max epoch=5 CV: 0.7530
+* model077: model075 + dropout=0 -> CV: 0.7719(変化なし)
+* model078: model075 + qq_table_mean/min -> CV: 0.7708
+* model079: model075 + embbed_dimを2倍に -> CV: 0.7657(train auc=0.8074なのでめちゃくちゃoverfit)
+* model080: model078 + qq_table_min/min fillna(0.65, 0.6) -> CV: 0.7705
+* model081: model079 + embed_dimのところにdropout入れる -> CV: 0.765x
+* model082: model080 + cont_layer は BN -> LayerNormalizationに変更　-> CV: 0.7723
+* model083: model082 + ちょっとoverfit気味なので、最終層にdropout0.5, 0.2
+  * dropout0.5 -> CV: 0.7720
+  * dropout0.2 -> CV: 0.7725
+* model084: model083のフルデータversion
+  * lr1e-3/num_warmup_steps1000 -> CV: 0.7927
+  * lr1e-3/num_warmup_steps3000 -> CV: 0.7933
+  * lr1e-3/num_warmup_steps5000 -> CV: 0.7928
+  * lr1e-4/num_warmup_steps1000 -> CV: 0.7847
+## other
+* ensemble exp261(lgbm=0.7983) + model084(transformer-0.7927) -> CV: 0.8007
+
+# 2020/12/17
+## experiments
+* ex_269: ex_172 + timedelta 2~10 -> CV: 0.7901
+* ex_270: ex_269 + last_lecture, last_lecture+content_id te -> 0.7901(same)
+* ex_271: ex_270 + from_last_lecture_count -> CV: 0.7904
+* ex_272: ex_271 + last_lecture_timestamp -> CV: 0.7903
+* ex_273: ex_271 groupby.transform(count)はリーク！cumcountやぞ
+* ex_274: ex_272 + last_lectureを受講した時間
+  
+* model085: model083 + LSTM -> epoch=7 CV: 0.7729 (overfit気味…)
+* model086: model083 + emb256->512 -> CV: 0.7723
+* model087: model083 + n_layers2->4 -> CV: 0.7717
+* model089: model083 + timedelta(logscale) -> CV: 0.7709 
+* model090: model085 + GRU -> epoch=7 CV: 0.7731
+* model091: model090 + lr 1e-3 => 5e-4 -> CV: 0.7720
+* model092: model090 + dropout0.5(transformer) CV: 0.7762
+* model093: model090 + dropout0.75 -> CV: 0.7744
+* model094: model092 + n_layer=4 -> CV: 0.7772!
+* model095: model094 + cat/cont_embeddingにdropout追加(0.5) -> いまいち
+* model096: model094 + 最終層のdropoutのみ1/2 -> CV: 0.7774
+* model097: model092 + lstm -> 0.7751
+* model098: model092 + enc-decにしてみる(targetのみdec側)
+* model099: model096 + all_data lr=(1e-3, 1.5e-3)
+  * lr=1e-3 -> CV: 0.7942
+* model100: model096 parameter tune. lr=(1e-3, 1.5e-3, 2e-3, 3e-3), dropout=(0.4, 0.5, 0.6)
+## other
+* ex_271の最後のlectureを受けてからの件数上位: 30件/40件/50件がかなり多いぞ。なんかありそう
+![img_1.png](img_1.png)
+  
+# 2020/12/18
+## experiments
+* model101: model096 + transformer(enc=1, dec=1) -> だめ
+* model102: model096 + hidden512 -> CV: 0.7747
+* model103: mdoel096 - continuous feature! -> CV: 0.7773
+* model104: model103 + batchsize128 -> CV: 0.7802
+* model105: mdoel103 + layer=6 -> CV: 0.7774
+* model106: model104 fullmodel (旧PCで)
+* model107: model104 + num_warmup_steps250 (num_warmup_steps早すぎなんかな?という) -> CV: 0.7776
+* model108: embbed_dim 倍にして、cat_embeddingで1/2にする batch_size=128 -> 0.7802(epoch=8)
+* model109: model096 + ratediff only + batchnorm -> 0.7809(epoch=9)
+* model110: model109 + fullmodel -> CV: 0.7962
+
+# 2020/12/19
+## experiments
+* model111: model109 + num_heads変える 4/16/32
+  * lr=0.001
+    * head4: CV: 0.7807
+    * head16 : CV: 0.7807
+    * head32 : CV: 0.7805
+  * lr=0.0005
+    * head16 : CV: 0.7635
+    * head32 : CV: 0.7640
+* model112: model109 + seq_len変える 50/75/125
+  * seq_len=50 CV: 0.7734
+  * seq_len=75 CV: 0.7781
+  * seq_len=100 CV: 0.7809    
+  * seq_len=125: CV: 0.7812
+* model113: model109 + cat embedding: layernorm -> linear -> layernorm CV: 0.7809 (same)
+* model114:
+
+* model119: model109 + pred layerをもう少し丁寧に -> CV: 0.7807
+* model120: model113 + cat embeddingをGRUに -> CV: 0.7803
+* model121: model120 + cont embeddingもGRUに -> CV: 0.7809
+* model122: model119 + categoryはtorch.cat => torch.add -> CV: 0.7791
+* model123: model113 + correct embedding (ゼロ埋めを-2埋めに変えた！)
+* model124: model119 + cont embedding GRU (model120はだめだけどmodel121は効いてそうなので)
+* model125: model110 + dropout0.2 (overfitしてないっぽいので)
+* model126: model121 + ratediffのBNをちゃんとやる
+* model127: model114 + categoryのembedding sizeを変えて実験 (old PCで)
+* model128: model123 - timediff系の特徴
 </div>
-
-
 
