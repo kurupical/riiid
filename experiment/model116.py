@@ -40,7 +40,7 @@ load_pickle = False
 epochs = 10
 device = torch.device("cuda")
 
-wait_time = 0
+wait_time = 60*60*4
 model_id = "train_0"
 
 
@@ -149,13 +149,17 @@ class FFN(nn.Module):
         self.state_size = state_size
 
         self.lr1 = nn.Linear(state_size, state_size//2)
+        self.ln1 = nn.LayerNorm(state_size)
         self.relu = nn.ReLU()
         self.lr2 = nn.Linear(state_size//2, state_size//4)
+        self.ln2 = nn.LayerNorm(state_size)
 
     def forward(self, x):
         x = self.lr1(x)
+        x = self.ln1(x)
         x = self.relu(x)
         x = self.lr2(x)
+        x = self.ln2(x)
         return x
 
 

@@ -36,11 +36,11 @@ torch.manual_seed(0)
 np.random.seed(0)
 is_debug = False
 is_make_feature_factory = False
-load_pickle = False
+load_pickle = True
 epochs = 10
 device = torch.device("cuda")
 
-wait_time = 0
+wait_time = 60*60*4
 model_id = "train_0"
 
 
@@ -144,18 +144,26 @@ class SAKTDataset(Dataset):
         }
 
 class FFN(nn.Module):
-    def __init__(self, state_size=200):
+    def __init__(self, state_size=200, dropout=0.5):
         super(FFN, self).__init__()
         self.state_size = state_size
 
-        self.lr1 = nn.Linear(state_size, state_size//2)
+        self.lr1 = nn.Linear(state_size, state_size)
+        self.ln1 = nn.LayerNorm(state_size)
+        self.dout1 = nn.Dropout(dropout)
         self.relu = nn.ReLU()
-        self.lr2 = nn.Linear(state_size//2, state_size//4)
+        self.lr2 = nn.Linear(state_size, state_size)
+        self.dout2 = nn.Dropout(dropout)
+        self.ln2 = nn.LayerNorm(state_size)
 
     def forward(self, x):
         x = self.lr1(x)
+        x = self.ln1(x)
+        x = self.dout1(x)
         x = self.relu(x)
         x = self.lr2(x)
+        x = self.ln2(x)
+        x = self.dout2(x)
         return x
 
 
@@ -194,9 +202,9 @@ class SAKTModel(nn.Module):
 
         self.layer_normal = nn.LayerNorm(embed_dim)
 
-        self.ffn = FFN(embed_dim)
+        self.ffn = FFN(embed_dim, dropout=dropout)
         self.dropout = nn.Dropout(dropout/2)
-        self.pred = nn.Linear(embed_dim//4, 1)
+        self.pred = nn.Linear(embed_dim, 1)
 
     def forward(self, x, question_ids, parts, elapsed_time, duration_previous_content, prior_q, user_answer,
                 rate_diff):
@@ -228,7 +236,7 @@ class SAKTModel(nn.Module):
         att_dec = att_dec.permute(1, 0, 2)  # att_output: [s_len, bs, embed] => [bs, s_len, embed]
 
         x = self.layer_normal(att_dec)
-        x = self.ffn(x)
+        x = self.ffn(x) + att_dec
         x = self.dropout(x)
         x = self.pred(x)
 
@@ -317,8 +325,8 @@ def main(params: dict,
     import mlflow
     print("start params={}".format(params))
     logger = get_logger()
-    # df = pd.read_pickle("../input/riiid-test-answer-prediction/train_merged.pickle")
-    df = pd.read_pickle("../input/riiid-test-answer-prediction/split10/train_0.pickle").sort_values(["user_id", "timestamp"]).reset_index(drop=True)
+    df = pd.read_pickle("../input/riiid-test-answer-prediction/train_merged.pickle")
+    # df = pd.read_pickle("../input/riiid-test-answer-prediction/split10/train_0.pickle").sort_values(["user_id", "timestamp"]).reset_index(drop=True)
     if is_debug:
         df = df.head(30000)
     df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1)

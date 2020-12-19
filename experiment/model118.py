@@ -144,18 +144,26 @@ class SAKTDataset(Dataset):
         }
 
 class FFN(nn.Module):
-    def __init__(self, state_size=200):
+    def __init__(self, state_size=200, dropout=0.5):
         super(FFN, self).__init__()
         self.state_size = state_size
 
         self.lr1 = nn.Linear(state_size, state_size//2)
+        self.dout1 = nn.Dropout(dropout)
+        self.ln1 = nn.LayerNorm(state_size)
         self.relu = nn.ReLU()
         self.lr2 = nn.Linear(state_size//2, state_size//4)
+        self.dout2 = nn.Dropout(dropout)
+        self.ln2 = nn.LayerNorm(state_size)
 
     def forward(self, x):
         x = self.lr1(x)
+        x = self.ln1(x)
+        x = self.dout1(x)
         x = self.relu(x)
         x = self.lr2(x)
+        x = self.ln2(x)
+        x = self.dout2(x)
         return x
 
 
