@@ -40,9 +40,9 @@ load_pickle = True
 epochs = 10
 device = torch.device("cuda")
 
-model_id = "train_0"
-
 wait_time = 0
+model_id = "all"
+
 
 class SAKTDataset(Dataset):
     def __init__(self, group, n_skill, n_part=8, max_seq=100, is_test=False, predict_mode=False):
@@ -78,6 +78,7 @@ class SAKTDataset(Dataset):
         duration_previous_content_ = self.samples[user_id]["duration_previous_content_bin300"]
         qa_ = self.samples[user_id]["answered_correctly"]
         prior_q_ = self.samples[user_id]["prior_question_had_explanation"]
+        rate_diff_ = self.samples[user_id]["rating_diff_content_user_id"]
 
         if not self.is_test:
             seq_len = len(q_)
@@ -90,6 +91,7 @@ class SAKTDataset(Dataset):
             elapsed_time_ = elapsed_time_[start:end]
             duration_previous_content_ = duration_previous_content_[start:end]
             prior_q_ = prior_q_[start:end]
+            rate_diff_ = rate_diff_[start:end]
             seq_len = len(q_)
 
         q = np.zeros(self.max_seq, dtype=int)
@@ -99,6 +101,7 @@ class SAKTDataset(Dataset):
         elapsed_time = np.zeros(self.max_seq, dtype=int)
         duration_previous_content = np.zeros(self.max_seq, dtype=int)
         prior_q = np.zeros(self.max_seq, dtype=int)
+        rate_diff = np.zeros(self.max_seq, dtype=int)
         if seq_len >= self.max_seq:
             q[:] = q_[-self.max_seq:]
             part[:] = part_[-self.max_seq:]
@@ -107,6 +110,7 @@ class SAKTDataset(Dataset):
             elapsed_time[:] = elapsed_time_[-self.max_seq:]
             duration_previous_content[:] = duration_previous_content_[-self.max_seq:]
             prior_q[:] = prior_q_[-self.max_seq:]
+            rate_diff[:] = rate_diff_[-self.max_seq:]
         else:
             q[-seq_len:] = q_
             part[-seq_len:] = part_
@@ -115,6 +119,7 @@ class SAKTDataset(Dataset):
             elapsed_time[-seq_len:] = elapsed_time_
             duration_previous_content[-seq_len:] = duration_previous_content_
             prior_q[-seq_len:] = prior_q_
+            rate_diff[-seq_len:] = rate_diff_
 
         target_id = q[1:]
         part = part[1:]
@@ -124,6 +129,7 @@ class SAKTDataset(Dataset):
         prior_q = prior_q[1:] # 0: nan, 1: lecture 2: False 3: True
         ua = ua[:-1] + 1 # 0: nan, 1: lecture, 2~5: answer
         x = qa[:-1].copy() + 2 # 1: lecture 2: not correct 3: correct
+        rate_diff = rate_diff[1:]
 
         return {
             "x": x,
@@ -134,6 +140,7 @@ class SAKTDataset(Dataset):
             "duration_previous_content": duration_previous_content,
             "label": label,
             "prior_q": prior_q,
+            "rate_diff": rate_diff,
         }
 
 class FFN(nn.Module):
@@ -175,9 +182,14 @@ class SAKTModel(nn.Module):
         self.transformer_enc = nn.TransformerEncoder(encoder_layer=encoder_layer, num_layers=4)
         self.gru = nn.GRU(input_size=embed_dim, hidden_size=embed_dim)
 
+        self.continuous_embedding = nn.Sequential(
+            nn.BatchNorm1d(99),
+            nn.Linear(1, embed_dim//2),
+            nn.LayerNorm(embed_dim//2)
+        )
         self.cat_embedding = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim),
-            nn.LayerNorm(embed_dim)
+            nn.Linear(embed_dim, embed_dim//2),
+            nn.LayerNorm(embed_dim//2)
         )
 
         self.layer_normal = nn.LayerNorm(embed_dim)
@@ -186,7 +198,8 @@ class SAKTModel(nn.Module):
         self.dropout = nn.Dropout(dropout/2)
         self.pred = nn.Linear(embed_dim, 1)
 
-    def forward(self, x, question_ids, parts, elapsed_time, duration_previous_content, prior_q, user_answer):
+    def forward(self, x, question_ids, parts, elapsed_time, duration_previous_content, prior_q, user_answer,
+                rate_diff):
         device = x.device
         att_mask = future_mask(x.size(1)).to(device)
 
@@ -201,7 +214,11 @@ class SAKTModel(nn.Module):
         dur_emb = self.duration_previous_content_embedding(duration_previous_content)
         x = torch.cat([x, el_time_emb, dur_emb, e, p, prior_q_emb, user_answer_emb], dim=2)
 
+        cont = rate_diff
+
+        cont_emb = self.continuous_embedding(cont.view(x.size(0), x.size(1), -1))
         x = self.cat_embedding(x)
+        x = torch.cat([x, cont_emb], dim=2)
 
         x = x.permute(1, 0, 2)  # x: [bs, s_len, embed] => [s_len, bs, embed]
 
@@ -238,9 +255,11 @@ def train_epoch(model, train_iterator, val_iterator, optim, criterion, scheduler
         duration_previous_content = item["duration_previous_content"].to(device).long()
         prior_question_had_explanation = item["prior_q"].to(device).long()
         user_answer = item["user_answer"].to(device).long()
+        rate_diff = item["rate_diff"].to(device).float()
 
         output = model(x, target_id, part, elapsed_time,
-                       duration_previous_content, prior_question_had_explanation, user_answer)
+                       duration_previous_content, prior_question_had_explanation, user_answer,
+                       rate_diff)
         target_idx = (label.view(-1) >= 0).nonzero()
         loss = criterion(output.view(-1)[target_idx], label.view(-1)[target_idx])
         loss.backward()
@@ -280,9 +299,12 @@ def train_epoch(model, train_iterator, val_iterator, optim, criterion, scheduler
             duration_previous_content = item["duration_previous_content"].to(device).long()
             prior_question_had_explanation = item["prior_q"].to(device).long()
             user_answer = item["user_answer"].to(device).long()
+            rate_diff = item["rate_diff"].to(device).float()
 
             output = model(x, target_id, part, elapsed_time,
-                           duration_previous_content, prior_question_had_explanation, user_answer)
+                           duration_previous_content, prior_question_had_explanation, user_answer,
+                           rate_diff)
+
             preds.extend(torch.nn.Sigmoid()(output[:, -1]).view(-1).data.cpu().numpy().tolist())
             labels.extend(label[:, -1].view(-1).data.cpu().numpy())
             i += 1
@@ -295,8 +317,8 @@ def main(params: dict,
     import mlflow
     print("start params={}".format(params))
     logger = get_logger()
-    # df = pd.read_pickle("../input/riiid-test-answer-prediction/train_merged.pickle")
-    df = pd.read_pickle("../input/riiid-test-answer-prediction/split10/train_0.pickle").sort_values(["user_id", "timestamp"]).reset_index(drop=True)
+    df = pd.read_pickle("../input/riiid-test-answer-prediction/train_merged.pickle")
+    # df = pd.read_pickle("../input/riiid-test-answer-prediction/split10/train_0.pickle").sort_values(["user_id", "timestamp"]).reset_index(drop=True)
     if is_debug:
         df = df.head(30000)
     df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1)
@@ -308,12 +330,16 @@ def main(params: dict,
         "prior_question_elapsed_time_bin300": {"type": "category"},
         "duration_previous_content_bin300": {"type": "category"},
         "prior_question_had_explanation": {"type": "category"},
+        "rating_diff_content_user_id": {"type": "numeric"}
     }
+
 
     if not load_pickle or is_debug:
         feature_factory_dict = {"user_id": {}}
         feature_factory_dict["user_id"]["DurationPreviousContent"] = DurationPreviousContent()
         feature_factory_dict["user_id"]["ElapsedTimeBinningEncoder"] = ElapsedTimeBinningEncoder()
+        feature_factory_dict["user_id"]["UserContentRateEncoder"] = UserContentRateEncoder(rate_func="elo",
+                                                                                           column="user_id")
         feature_factory_manager = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
                                                         logger=logger,
                                                         split_num=1,
@@ -325,7 +351,8 @@ def main(params: dict,
         df = feature_factory_manager.all_predict(df)
         df = df[["user_id", "content_id", "content_type_id", "part", "user_answer", "answered_correctly",
                  "prior_question_elapsed_time_bin300", "duration_previous_content_bin300",
-                 "prior_question_had_explanation"]].replace(-99, -1)
+                 "prior_question_had_explanation", "rating_diff_content_user_id"]]
+        df["rating_diff_content_user_id"] = df["rating_diff_content_user_id"].fillna(1500)
         print(df.head(10))
 
         print("data preprocess")
@@ -374,17 +401,17 @@ def main(params: dict,
                                   n_skill=n_skill,
                                   max_seq=params["max_seq"])
 
-    os.makedirs("../input/feature_engineering/model107", exist_ok=True)
+    os.makedirs("../input/feature_engineering/model110", exist_ok=True)
     if not is_debug and not load_pickle:
-        with open(f"../input/feature_engineering/model107/train.pickle", "wb") as f:
+        with open(f"../input/feature_engineering/model110/train.pickle", "wb") as f:
             pickle.dump(dataset_train, f)
-        with open(f"../input/feature_engineering/model107/val.pickle", "wb") as f:
+        with open(f"../input/feature_engineering/model110/val.pickle", "wb") as f:
             pickle.dump(dataset_val, f)
 
     if not is_debug and load_pickle:
-        with open(f"../input/feature_engineering/model107/train.pickle", "rb") as f:
+        with open(f"../input/feature_engineering/model110/train.pickle", "rb") as f:
             dataset_train = pickle.load(f)
-        with open(f"../input/feature_engineering/model107/val.pickle", "rb") as f:
+        with open(f"../input/feature_engineering/model110/val.pickle", "rb") as f:
             dataset_val = pickle.load(f)
         print("loaded!")
     dataloader_train = DataLoader(dataset_train, batch_size=params["batch_size"], shuffle=True, num_workers=1)
@@ -428,9 +455,11 @@ def main(params: dict,
             duration_previous_content = item["duration_previous_content"].to(device).long()
             prior_question_had_explanation = item["prior_q"].to(device).long()
             user_answer = item["user_answer"].to(device).long()
+            rate_diff = item["rate_diff"].to(device).float()
 
             output = model(x, target_id, part, elapsed_time,
-                           duration_previous_content, prior_question_had_explanation, user_answer)
+                           duration_previous_content, prior_question_had_explanation, user_answer,
+                           rate_diff)
 
             preds.extend(torch.nn.Sigmoid()(output[:, -1]).view(-1).data.cpu().numpy().tolist())
             labels.extend(label[:, -1].view(-1).data.cpu().numpy().tolist())
@@ -483,6 +512,8 @@ def main(params: dict,
         feature_factory_dict = {"user_id": {}}
         feature_factory_dict["user_id"]["DurationPreviousContent"] = DurationPreviousContent(is_partial_fit=True)
         feature_factory_dict["user_id"]["ElapsedTimeBinningEncoder"] = ElapsedTimeBinningEncoder()
+        feature_factory_dict["user_id"]["UserContentRateEncoder"] = UserContentRateEncoder(rate_func="elo",
+                                                                                           column="user_id")
         feature_factory_manager = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
                                                         logger=logger,
                                                         split_num=1,
@@ -516,18 +547,18 @@ if __name__ == "__main__":
     if not is_debug:
         for _ in tqdm(range(wait_time)):
             time.sleep(1)
+    output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
+    os.makedirs(output_dir, exist_ok=True)
     for lr in [1e-3]:
-        for dropout in [0.5]:
-            output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
-            os.makedirs(output_dir, exist_ok=True)
+        for dropout in [0.1]:
             if is_debug:
                 batch_size = 8
             else:
-                batch_size = 512
+                batch_size = 128
             params = {"embed_dim": 256,
                       "max_seq": 100,
                       "batch_size": batch_size,
-                      "num_warmup_steps": 250,
+                      "num_warmup_steps": 1000,
                       "lr": lr,
                       "dropout": dropout}
             main(params, output_dir=output_dir)

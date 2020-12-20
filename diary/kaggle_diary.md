@@ -935,6 +935,7 @@ kaggle datasets version -p riiid_code/ --dir-mode "zip" -m "test"
 * model111: model109 + num_heads変える 4/16/32
   * lr=0.001
     * head4: CV: 0.7807
+    * head8: CV: 0.7809 (benchmark)      
     * head16 : CV: 0.7807
     * head32 : CV: 0.7805
   * lr=0.0005
@@ -946,17 +947,64 @@ kaggle datasets version -p riiid_code/ --dir-mode "zip" -m "test"
   * seq_len=100 CV: 0.7809    
   * seq_len=125: CV: 0.7812
 * model113: model109 + cat embedding: layernorm -> linear -> layernorm CV: 0.7809 (same)
-* model114:
-
+* model114: model113 + FFN hidden_dimを半分ずつに CV: 0.7803
+* model115: model113 + FFN LayerNorm -> CV: 0.7812
+* model116: model113 + 114 + 115 -> CV: 0.7811
+* model117: model115 + FFN dropout -> CV: 0.7807
+* model118: model116 + FFN dropout -> CV: [ ]
 * model119: model109 + pred layerをもう少し丁寧に -> CV: 0.7807
 * model120: model113 + cat embeddingをGRUに -> CV: 0.7803
 * model121: model120 + cont embeddingもGRUに -> CV: 0.7809
 * model122: model119 + categoryはtorch.cat => torch.add -> CV: 0.7791
-* model123: model113 + correct embedding (ゼロ埋めを-2埋めに変えた！)
-* model124: model119 + cont embedding GRU (model120はだめだけどmodel121は効いてそうなので)
-* model125: model110 + dropout0.2 (overfitしてないっぽいので)
-* model126: model121 + ratediffのBNをちゃんとやる
+* model123: model113 + correct embedding (ゼロ埋めを-2埋めに変えた！) -> CV: 0.7809
+* model124: model119 + cont embedding GRU (model120はだめだけどmodel121は効いてそうなので) -> CV: 0.7812
+* model125: model110 + dropout0.2 (overfitしてないっぽいので) full data -> CV: 0.7970
+* model126: model121 + ratediffのBNをちゃんとやる -> CV: 0.780x
 * model127: model114 + categoryのembedding sizeを変えて実験 (old PCで)
-* model128: model123 - timediff系の特徴
+* model128: model123 - timediff系の特徴 -> CV: 0.7557(epoch=2)
+* model129: model124 + task_container_id (as category) -> CV: 0.7815
+* model130: model121 + task_container_id (as positional_encoding) -> CV: 0.7797
+* model131: model126 - continuousのlayer normものぞく(データないとそれが引っ張られる！) -> 0.7806
+* model132: model114 + lr/num_warmup_stepsのチューニング(old PCで)
+* model133: model121 + category_features に padding_index=0 を追加 -> CV: 0.7808
+* model134: model110 + dropout0.1 -> 全然ダメだった
+* model135: model129 + timediff系、binningを変えてみる timedelta=[500, 1000, 2000], elapsed_time=[500, 1000, 2000]
+  * timedelta 500
+    * elapsed_time 500: 0.7813
+    * elapsed_time 1000: 0.7814
+    * elapsed_time 2000: 0.7811
+  * timedelta 1000
+    * elapsed_time 500: 0.7813
+    * elapsed_time 1000: 0.7814
+    * elapsed_time 2000: 0.7810
+  * timedelta 2000
+    * elapsed_time 500: 0.7811
+    * elapsed_time 1000: 0.7812
+    * elapsed_time 2000: 0.7812
+## ensemble
+* model084(0.7928) + model099(0.7942) -> 0.7970
+* model084(0.7928) + model110(0.7962) -> 0.7986
+* model099(0.7942) + model110(0.7962) -> 0.7972
+* model110(0.7962) + lgbm(0.7980) -> 0.803
+## stacking
+single df1: AUC=0.7940
+single df2: AUC=0.7956
+single df3: AUC=0.7977
+---
+best ensemble: AUC=0.7999 (df1*0.4 + df3*0.6)
+---
+stacking logistic regression: AUC=0.8001
+stacking mlp_classifier(sklearn default parameters) : AUC=0.8006
+
+# 2020/12/20
+## experiments
+* model136: model129 + model115 [MILESTONE!] -> AUC: 0.7814
+  * model136 with 20epochs (どこまで行けるのか確かめたい) -> CV: 0.7819(epoch=11)
+* model137: model136 + study_time -> CV: 0.7814
+* model138: model137 + study_time(agg) -> CV: 0.7810
+* model139: model138 + timedelta(2~5) -> CV: 0.7781
+* model140: model139 + timedelta(user_id/part) -> CV: 0.769x
+* model141: model140 + timedelta(user_id/part) + emb16 -> CV: 0.7808
+* model142: model136 + embed16 + cat([lstm*2, transformer])
 </div>
 

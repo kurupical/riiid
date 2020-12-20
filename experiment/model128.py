@@ -40,7 +40,7 @@ load_pickle = True
 epochs = 10
 device = torch.device("cuda")
 
-wait_time = 60*90
+wait_time = 0
 
 class SAKTDataset(Dataset):
     def __init__(self, group, n_skill, n_part=8, max_seq=100, is_test=False, predict_mode=False):

@@ -36,7 +36,7 @@ torch.manual_seed(0)
 np.random.seed(0)
 is_debug = False
 is_make_feature_factory = False
-load_pickle = False
+load_pickle = True
 epochs = 10
 device = torch.device("cuda")
 
@@ -550,7 +550,7 @@ if __name__ == "__main__":
     output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
     os.makedirs(output_dir, exist_ok=True)
     for lr in [1e-3]:
-        for dropout in [0.5]:
+        for dropout in [0.2]:
             if is_debug:
                 batch_size = 8
             else:
