@@ -70,6 +70,7 @@ def run(debug,
     model = SAKTModel(13938, embed_dim=params["embed_dim"], max_seq=params["max_seq"])
     model.load_state_dict(torch.load(model_path))
     model.to(device)
+    model.eval()
 
     # load feature_factory_manager
     logger = get_logger()
@@ -144,21 +145,23 @@ def run(debug,
         dataloader_val = DataLoader(dataset_val, batch_size=1024, shuffle=False, num_workers=1)
 
         predicts = []
-        for item in dataloader_val:
-            x = item["x"].to(device).long()
-            target_id = item["target_id"].to(device).long()
-            part = item["part"].to(device).long()
-            label = item["label"].to(device).float()
-            elapsed_time = item["elapsed_time"].to(device).long()
-            duration_previous_content = item["duration_previous_content"].to(device).long()
-            prior_question_had_explanation = item["prior_q"].to(device).long()
-            user_answer = item["user_answer"].to(device).long()
-            rate_diff = item["rate_diff"].to(device).float()
 
-            output = model(x, target_id, part, elapsed_time,
-                           duration_previous_content, prior_question_had_explanation, user_answer,
-                           rate_diff)
-            predicts.extend(torch.nn.Sigmoid()(output[:, -1]).view(-1).data.cpu().numpy().tolist())
+        with torch.no_grad():
+            for item in dataloader_val:
+                x = item["x"].to(device).long()
+                target_id = item["target_id"].to(device).long()
+                part = item["part"].to(device).long()
+                label = item["label"].to(device).float()
+                elapsed_time = item["elapsed_time"].to(device).long()
+                duration_previous_content = item["duration_previous_content"].to(device).long()
+                prior_question_had_explanation = item["prior_q"].to(device).long()
+                user_answer = item["user_answer"].to(device).long()
+                rate_diff = item["rate_diff"].to(device).float()
+
+                output = model(x, target_id, part, elapsed_time,
+                               duration_previous_content, prior_question_had_explanation, user_answer,
+                               rate_diff)
+                predicts.extend(torch.nn.Sigmoid()(output[:, -1]).view(-1).data.cpu().numpy().tolist())
 
         logger.info("------ other ------")
         df_sample_prediction = df_test[df_test["content_type_id"] == 0][["row_id"]]

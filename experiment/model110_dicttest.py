@@ -34,15 +34,15 @@ from transformers import AdamW, get_linear_schedule_with_warmup
 
 torch.manual_seed(0)
 np.random.seed(0)
-is_debug = False
+is_debug = True
 is_make_feature_factory = True
-load_pickle = True
+load_pickle = False
 epochs = 10
 device = torch.device("cuda")
 
+wait_time = 0
 model_id = "all"
 
-wait_time = 0
 
 class SAKTDataset(Dataset):
     def __init__(self, group, n_skill, n_part=8, max_seq=100, is_test=False, predict_mode=False):
@@ -79,8 +79,6 @@ class SAKTDataset(Dataset):
         qa_ = self.samples[user_id]["answered_correctly"]
         prior_q_ = self.samples[user_id]["prior_question_had_explanation"]
         rate_diff_ = self.samples[user_id]["rating_diff_content_user_id"]
-        qq_table_mean_ = self.samples[user_id]["qq_table2_mean"]
-        qq_table_min_ = self.samples[user_id]["qq_table2_min"]
 
         if not self.is_test:
             seq_len = len(q_)
@@ -94,8 +92,6 @@ class SAKTDataset(Dataset):
             duration_previous_content_ = duration_previous_content_[start:end]
             prior_q_ = prior_q_[start:end]
             rate_diff_ = rate_diff_[start:end]
-            qq_table_mean_ = qq_table_mean_[start:end]
-            qq_table_min_ = qq_table_min_[start:end]
             seq_len = len(q_)
 
         q = np.zeros(self.max_seq, dtype=int)
@@ -106,8 +102,6 @@ class SAKTDataset(Dataset):
         duration_previous_content = np.zeros(self.max_seq, dtype=int)
         prior_q = np.zeros(self.max_seq, dtype=int)
         rate_diff = np.zeros(self.max_seq, dtype=int)
-        qq_table_mean = np.zeros(self.max_seq, dtype=int)
-        qq_table_min = np.zeros(self.max_seq, dtype=int)
         if seq_len >= self.max_seq:
             q[:] = q_[-self.max_seq:]
             part[:] = part_[-self.max_seq:]
@@ -117,8 +111,6 @@ class SAKTDataset(Dataset):
             duration_previous_content[:] = duration_previous_content_[-self.max_seq:]
             prior_q[:] = prior_q_[-self.max_seq:]
             rate_diff[:] = rate_diff_[-self.max_seq:]
-            qq_table_mean[:] = qq_table_mean_[-self.max_seq:]
-            qq_table_min[:] = qq_table_min_[-self.max_seq:]
         else:
             q[-seq_len:] = q_
             part[-seq_len:] = part_
@@ -128,8 +120,6 @@ class SAKTDataset(Dataset):
             duration_previous_content[-seq_len:] = duration_previous_content_
             prior_q[-seq_len:] = prior_q_
             rate_diff[-seq_len:] = rate_diff_
-            qq_table_mean[-seq_len:] = qq_table_mean_
-            qq_table_min[-seq_len:] = qq_table_min_
 
         target_id = q[1:]
         part = part[1:]
@@ -140,8 +130,6 @@ class SAKTDataset(Dataset):
         ua = ua[:-1] + 1 # 0: nan, 1: lecture, 2~5: answer
         x = qa[:-1].copy() + 2 # 1: lecture 2: not correct 3: correct
         rate_diff = rate_diff[1:]
-        qq_table_mean = qq_table_mean[1:]
-        qq_table_min = qq_table_min[1:]
 
         return {
             "x": x,
@@ -153,8 +141,6 @@ class SAKTDataset(Dataset):
             "label": label,
             "prior_q": prior_q,
             "rate_diff": rate_diff,
-            "qq_table_mean": qq_table_mean,
-            "qq_table_min": qq_table_min
         }
 
 class FFN(nn.Module):
@@ -197,8 +183,8 @@ class SAKTModel(nn.Module):
         self.gru = nn.GRU(input_size=embed_dim, hidden_size=embed_dim)
 
         self.continuous_embedding = nn.Sequential(
-            nn.LayerNorm(3),
-            nn.Linear(3, embed_dim//2),
+            nn.BatchNorm1d(99),
+            nn.Linear(1, embed_dim//2),
             nn.LayerNorm(embed_dim//2)
         )
         self.cat_embedding = nn.Sequential(
@@ -213,7 +199,7 @@ class SAKTModel(nn.Module):
         self.pred = nn.Linear(embed_dim, 1)
 
     def forward(self, x, question_ids, parts, elapsed_time, duration_previous_content, prior_q, user_answer,
-                rate_diff, qq_table_mean, qq_table_min):
+                rate_diff):
         device = x.device
         att_mask = future_mask(x.size(1)).to(device)
 
@@ -228,7 +214,7 @@ class SAKTModel(nn.Module):
         dur_emb = self.duration_previous_content_embedding(duration_previous_content)
         x = torch.cat([x, el_time_emb, dur_emb, e, p, prior_q_emb, user_answer_emb], dim=2)
 
-        cont = torch.cat([rate_diff, qq_table_mean, qq_table_min], dim=1)
+        cont = rate_diff
 
         cont_emb = self.continuous_embedding(cont.view(x.size(0), x.size(1), -1))
         x = self.cat_embedding(x)
@@ -270,12 +256,10 @@ def train_epoch(model, train_iterator, val_iterator, optim, criterion, scheduler
         prior_question_had_explanation = item["prior_q"].to(device).long()
         user_answer = item["user_answer"].to(device).long()
         rate_diff = item["rate_diff"].to(device).float()
-        qq_table_mean = item["qq_table_mean"].to(device).float()
-        qq_table_min = item["qq_table_min"].to(device).float()
 
         output = model(x, target_id, part, elapsed_time,
                        duration_previous_content, prior_question_had_explanation, user_answer,
-                       rate_diff, qq_table_mean, qq_table_min)
+                       rate_diff)
         target_idx = (label.view(-1) >= 0).nonzero()
         loss = criterion(output.view(-1)[target_idx], label.view(-1)[target_idx])
         loss.backward()
@@ -316,12 +300,11 @@ def train_epoch(model, train_iterator, val_iterator, optim, criterion, scheduler
             prior_question_had_explanation = item["prior_q"].to(device).long()
             user_answer = item["user_answer"].to(device).long()
             rate_diff = item["rate_diff"].to(device).float()
-            qq_table_mean = item["qq_table_mean"].to(device).float()
-            qq_table_min = item["qq_table_min"].to(device).float()
 
             output = model(x, target_id, part, elapsed_time,
                            duration_previous_content, prior_question_had_explanation, user_answer,
-                           rate_diff, qq_table_mean, qq_table_min)
+                           rate_diff)
+
             preds.extend(torch.nn.Sigmoid()(output[:, -1]).view(-1).data.cpu().numpy().tolist())
             labels.extend(label[:, -1].view(-1).data.cpu().numpy())
             i += 1
@@ -337,7 +320,7 @@ def main(params: dict,
     df = pd.read_pickle("../input/riiid-test-answer-prediction/train_merged.pickle")
     # df = pd.read_pickle("../input/riiid-test-answer-prediction/split10/train_0.pickle").sort_values(["user_id", "timestamp"]).reset_index(drop=True)
     if is_debug:
-        df = df.head(30000)
+        df = df.head(500000)
     df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1)
     column_config = {
         ("content_id", "content_type_id"): {"type": "category"},
@@ -347,30 +330,18 @@ def main(params: dict,
         "prior_question_elapsed_time_bin300": {"type": "category"},
         "duration_previous_content_bin300": {"type": "category"},
         "prior_question_had_explanation": {"type": "category"},
-        "rating_diff_content_user_id": {"type": "numeric"},
-        "qq_table2_mean": {"type": "numeric"},
-        "qq_table2_min": {"type": "numeric"}
+        "rating_diff_content_user_id": {"type": "numeric"}
     }
 
-    ff_for_transformer = FeatureFactoryForTransformer(column_config=column_config,
-                                                      dict_path="../feature_engineering/",
-                                                      sequence_length=params["max_seq"],
-                                                      logger=logger)
-    ff_for_transformer.make_dict(df=df)
+    with open(f"{output_dir}/transformer_param.json", "w") as f:
+        json.dump(params, f)
     if is_make_feature_factory:
         # feature factory
         feature_factory_dict = {"user_id": {}}
-        feature_factory_dict["user_id"]["DurationPreviousContent"] = DurationPreviousContent()
+        feature_factory_dict["user_id"]["DurationPreviousContent"] = DurationPreviousContent(is_partial_fit=True)
         feature_factory_dict["user_id"]["ElapsedTimeBinningEncoder"] = ElapsedTimeBinningEncoder()
         feature_factory_dict["user_id"]["UserContentRateEncoder"] = UserContentRateEncoder(rate_func="elo",
                                                                                            column="user_id")
-        feature_factory_dict["user_id"]["QuestionQuestionTableEncoder2"] = \
-            QuestionQuestionTableEncoder2(
-                model_id=model_id,
-                is_debug=is_debug,
-                past_n=100,
-                min_size=300
-            )
         feature_factory_manager = FeatureFactoryManager(feature_factory_dict=feature_factory_dict,
                                                         logger=logger,
                                                         split_num=1,
@@ -378,20 +349,23 @@ def main(params: dict,
                                                         load_feature=not is_debug,
                                                         save_feature=not is_debug)
 
-        print("all_predict")
-        df = pd.read_pickle("../input/riiid-test-answer-prediction/train_merged.pickle")
-        if is_debug:
-            df = df.head(10000)
+        ff_for_transformer = FeatureFactoryForTransformer(column_config=column_config,
+                                                          dict_path="../feature_engineering/",
+                                                          sequence_length=params["max_seq"],
+                                                          logger=logger)
+        ff_for_transformer.make_dict(df=df)
         df = df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
-        feature_factory_manager.fit(df)
-        df = feature_factory_manager.all_predict(df)
-        df = df[["user_id", "content_id", "content_type_id", "part", "user_answer", "answered_correctly",
-                 "prior_question_elapsed_time_bin300", "duration_previous_content_bin300",
-                 "prior_question_had_explanation", "rating_diff_content_user_id",
-                 "qq_table2_mean", "qq_table2_min"]]
-        df["qq_table2_mean"] = df["qq_table2_mean"].fillna(0.65)
-        df["qq_table2_min"] = df["qq_table2_min"].fillna(0.6)
-        df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1)
+        feature_factory_manager.fit(df.iloc[:95000].copy())
+        w_df = feature_factory_manager.all_predict(df.iloc[:95000].copy())
+        ff_for_transformer.fit(w_df)
+        for _, w_df in tqdm(df.iloc[95000:].groupby(["user_id", "task_container_id"])):
+            ww_df = feature_factory_manager.partial_predict(w_df.drop(["answered_correctly", "user_answer"], axis=1))
+            group = ff_for_transformer.partial_predict(ww_df)
+
+            ww_df["answered_correctly"] = w_df["answered_correctly"]
+            ww_df["user_answer"] = w_df["user_answer"]
+            feature_factory_manager.fit(ww_df)
+            ff_for_transformer.fit(ww_df)
         for dicts in feature_factory_manager.feature_factory_dict.values():
             for factory in dicts.values():
                 factory.logger = None
@@ -399,7 +373,6 @@ def main(params: dict,
         with open(f"{output_dir}/feature_factory_manager.pickle", "wb") as f:
             pickle.dump(feature_factory_manager, f)
 
-        ff_for_transformer.fit(df)
         ff_for_transformer.logger = None
         with open(f"{output_dir}/feature_factory_manager_for_transformer.pickle", "wb") as f:
             pickle.dump(ff_for_transformer, f)
@@ -408,18 +381,18 @@ if __name__ == "__main__":
     if not is_debug:
         for _ in tqdm(range(wait_time)):
             time.sleep(1)
-    for lr in [1e-3, 1.5e-3]:
+    output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
+    os.makedirs(output_dir, exist_ok=True)
+    for lr in [1e-3]:
         for dropout in [0.5]:
-            output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
-            os.makedirs(output_dir, exist_ok=True)
             if is_debug:
                 batch_size = 8
             else:
-                batch_size = 512
+                batch_size = 128
             params = {"embed_dim": 256,
                       "max_seq": 100,
                       "batch_size": batch_size,
-                      "num_warmup_steps": 3000,
+                      "num_warmup_steps": 1000,
                       "lr": lr,
                       "dropout": dropout}
             main(params, output_dir=output_dir)

@@ -453,6 +453,7 @@ def main(params: dict):
         mlflow.log_metric("auc_val", auc_transformer)
         mlflow.end_run()
     torch.save(model.state_dict(), f"{output_dir}/transformers.pth")
+    del model
     """
     with open(f"{output_dir}/transformer_param.json", "w") as f:
         json.dump(params, f)
@@ -473,7 +474,7 @@ def main(params: dict):
     """
 
 if __name__ == "__main__":
-    for lr in [1e-3, 5e-4]:
+    for lr in [5e-4]:
         for dropout in [0.1]:
             params = {"embed_dim": 256,
                       "max_seq": 100,

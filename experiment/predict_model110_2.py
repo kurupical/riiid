@@ -68,7 +68,7 @@ def run(debug,
     # model loading
     model_path = f"{model_dir}/transformers.pth"
     model = SAKTModel(13938, embed_dim=params["embed_dim"], max_seq=params["max_seq"])
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
     model.to(device)
 
     # load feature_factory_manager

@@ -26,7 +26,7 @@ import time
 
 torch.manual_seed(0)
 np.random.seed(0)
-is_debug = False
+is_debug = True
 is_make_feature_factory = False
 epochs = 8
 device = torch.device("cuda")

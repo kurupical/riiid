@@ -18,7 +18,6 @@ import os
 import tqdm
 import lightgbm as lgb
 import pickle
-import riiideducation
 import numpy as np
 from logging import Logger, StreamHandler, Formatter
 import shutil
@@ -30,7 +29,7 @@ from torch.utils.data import Dataset, DataLoader
 
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/model051/20201214105333"
+model_dir = "../output/model110/20201218222728"
 if torch.cuda.is_available():
     device = "cuda"
 else:
@@ -51,7 +50,6 @@ def run(debug,
         kaggle=False):
 
     # environment
-    env = riiideducation.make_env()
 
     df_question = pd.read_csv("../input/riiid-test-answer-prediction/questions.csv",
                               dtype={"bundle_id": "int32",
@@ -70,6 +68,7 @@ def run(debug,
     model = SAKTModel(13938, embed_dim=params["embed_dim"], max_seq=params["max_seq"])
     model.load_state_dict(torch.load(model_path))
     model.to(device)
+    model.eval()
 
     # load feature_factory_manager
     logger = get_logger()
@@ -83,33 +82,24 @@ def run(debug,
         feature_factory_manager = pickle.load(f)
     feature_factory_manager.logger = logger
 
-
-    iter_test = env.iter_test()
     df_test_prev = []
     df_test_prev_rows = 0
     answered_correctlies = []
     user_answers = []
     i = 0
-    for (df_test, df_sample_prediction) in iter_test:
+    df_all = pd.read_csv("../input/riiid-test-answer-prediction/train.csv", nrows=10000)
+
+    for _, df_test in df_all.groupby(["user_id", "task_container_id"]):
         i += 1
         logger.info(f"[iteration {i}: data_length: {len(df_test)}")
         # 前回のデータ更新
-        if df_test_prev_rows > 0: # 初回のみパスするためのif
-            answered_correctly = df_test.iloc[0]["prior_group_answers_correct"]
-            user_answer = df_test.iloc[0]["prior_group_responses"]
-            answered_correctlies.extend([int(x) for x in answered_correctly.replace("[", "").replace("'", "").replace("]", "").replace(" ", "").split(",")])
-            user_answers.extend([int(x) for x in user_answer.replace("[", "").replace("'", "").replace("]", "").replace(" ", "").split(",")])
-
         if debug:
             update_record = 1
         if df_test_prev_rows > update_record:
             logger.info("------ fitting ------")
             logger.info("concat df")
             df_test_prev = pd.concat(df_test_prev)
-            df_test_prev["answered_correctly"] = answered_correctlies
-            df_test_prev["user_answer"] = user_answers
             # df_test_prev = df_test_prev.drop(prior_columns, axis=1)
-            df_test_prev = df_test_prev[df_test_prev["answered_correctly"] != -1]
             df_test_prev["answered_correctly"] = df_test_prev["answered_correctly"].replace(-1, np.nan)
             df_test_prev["prior_question_had_explanation"] = df_test_prev["prior_question_had_explanation"].fillna(-1).astype("int8")
 
@@ -144,26 +134,27 @@ def run(debug,
         dataloader_val = DataLoader(dataset_val, batch_size=1024, shuffle=False, num_workers=1)
 
         predicts = []
-        for item in dataloader_val:
-            x = item["x"].to(device).long()
-            target_id = item["target_id"].to(device).long()
-            part = item["part"].to(device).long()
-            label = item["label"].to(device).float()
-            elapsed_time = item["elapsed_time"].to(device).long()
-            duration_previous_content = item["duration_previous_content"].to(device).long()
-            prior_question_had_explanation = item["prior_q"].to(device).long()
-            user_answer = item["user_answer"].to(device).long()
-            rate_diff = item["rate_diff"].to(device).float()
+        model.eval()
+        with torch.no_grad():
+            for item in dataloader_val:
+                x = item["x"].to(device).long()
+                target_id = item["target_id"].to(device).long()
+                part = item["part"].to(device).long()
+                label = item["label"].to(device).float()
+                elapsed_time = item["elapsed_time"].to(device).long()
+                duration_previous_content = item["duration_previous_content"].to(device).long()
+                prior_question_had_explanation = item["prior_q"].to(device).long()
+                user_answer = item["user_answer"].to(device).long()
+                rate_diff = item["rate_diff"].to(device).float()
 
-            output = model(x, target_id, part, elapsed_time,
-                           duration_previous_content, prior_question_had_explanation, user_answer,
-                           rate_diff)
-            predicts.extend(torch.nn.Sigmoid()(output[:, -1]).view(-1).data.cpu().numpy().tolist())
+                output = model(x, target_id, part, elapsed_time,
+                               duration_previous_content, prior_question_had_explanation, user_answer,
+                               rate_diff)
+                predicts.extend(torch.nn.Sigmoid()(output[:, -1]).view(-1).data.cpu().numpy().tolist())
 
         logger.info("------ other ------")
         df_sample_prediction = df_test[df_test["content_type_id"] == 0][["row_id"]]
         df_sample_prediction["answered_correctly"] = predicts
-        env.predict(df_sample_prediction)
         df_test_prev.append(df_test)
         df_test_prev_rows += len(df_test)
         if i < 5:

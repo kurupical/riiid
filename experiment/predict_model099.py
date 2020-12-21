@@ -137,11 +137,10 @@ def run(debug,
         logger.info(f"------ transform ------ ")
         df_test["prior_question_had_explanation"] = df_test["prior_question_had_explanation"].astype("float16").fillna(-1).astype("int8")
 
-        df_test["previous_answer_content_id"] = -1
+        df_test["previous_answer_content_id"] = -99
         df_test = feature_factory_manager.partial_predict(df_test)
         df_test["qq_table2_mean"] = df_test["qq_table2_mean"].fillna(0.65)
         df_test["qq_table2_min"] = df_test["qq_table2_min"].fillna(0.6)
-        df_test["previous_answer_content_id"] = -1
         group = feature_factory_manager_for_transformer.partial_predict(df_test[df_test["content_type_id"] == 0])
         logger.info(f"------ predict ------")
 
