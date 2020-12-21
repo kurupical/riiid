@@ -999,12 +999,42 @@ stacking mlp_classifier(sklearn default parameters) : AUC=0.8006
 # 2020/12/20
 ## experiments
 * model136: model129 + model115 [MILESTONE!] -> AUC: 0.7814
-  * model136 with 20epochs (どこまで行けるのか確かめたい) -> CV: 0.7819(epoch=11)
+  * model136_2: with 20epochs (どこまで行けるのか確かめたい) -> CV: 0.7819(epoch=11)
+  * model136_3: with batch_size=512/20epoch　-> AUC: 0.7802 (epoch=12)
+  * model136_4: with batch_size=64 -> AUC: 0.7804
 * model137: model136 + study_time -> CV: 0.7814
 * model138: model137 + study_time(agg) -> CV: 0.7810
 * model139: model138 + timedelta(2~5) -> CV: 0.7781
 * model140: model139 + timedelta(user_id/part) -> CV: 0.769x
 * model141: model140 + timedelta(user_id/part) + emb16 -> CV: 0.7808
-* model142: model136 + embed16 + cat([lstm*2, transformer])
+* model142: model136 + embed16 + cat([lstm*2, transformer])　-> CV: 0.7785
+* model143: transformer enc/dec両方使うの再度試してみる!! 
+  * dropoutを過度に大きくするとダメっぽい(0.5だと全然収束しない?)
+  * layer2 dropout=0.1, emb1=256, emb2=16: 0.7732 (epoch=9)
+  * layer2 dropout=0.2, emb1=256, emb2=16: 0.7743 (epoch=10)
+  * layer2 dropout=0.5, dmb1=256, emb2=16: 0.7659
+  * layer2 dropout=0.1, emb1=256, emb2=32: 0.6x (安定しない)
+  * layer2 dropout=0.2, emb1=256, emb2=32: 0.6x (安定しない)
+  * layer2 dropout=0.5, emb1=256, emb2=32: 0.7631 (まだ伸びそう)
+  * layer2 dropout=x emb1=256+128 emb2=any: ダメそう
+* model144: model136_2 with full data lr=[0.9e-3, 0.8e-3], dropout=[0.2, 0.3]
+  * lr=0.9e-3 dropout=0.2 -> CV: 0.7976
+* model145: model143 + lr=3e-4 記録できず…
+* model146: answered_correctlyをスライド -> だめ
+
+# 2020/12/21
+* model147: model143
+  * layer2 dropout=0.1 emb1=256 emb2=16で、full model
+* model148: model143 + seq_len=99->100 だめ
+* model149: model136_2 + time as continuous feature -> CV: 0.7803
+* model150: model148 + ライトめなパラメータ(lr=1e-4, dropout=0.1) -> だめ...
+* model151: model136_2 + answered_past_idx -> CV: 0.7869(epoch=11, 途中で落ちた...)
+* model152: model151 + random data dropout -> CV: 0.7865(epoch=11)
+* model153: model150 + add embedding -> だめ
+* model154: model150 + cat_embedding をなくす (1epochのみで) -> だめぽい
+* model155: model151 + previous_answer_content_id ★lr_scheduler epochs=20として設定
+* model156: model155 + cat_emb(sub) 8, 16 ★lr_scheduler epochs=20として設定
+* model157: model155 + cont_emb: 8, 16, 32, 64 / cat_emb(content_id): 128, 256 ★lr_scheduler epochs=20として設定
+* model158: model155 + all_data
 </div>
 
