@@ -97,28 +97,36 @@ class FeatureFactoryForTransformer:
             if user_id not in self.data_dict:
                 self.data_dict[user_id] = {}
                 for key in self.column_config.keys():
+                    dtype = self.column_config[key]["dtype"]
+
                     if self.column_config[key]["type"] == "category":
                         embbed_dict = self.embbed_dict[key]
                         if type(key) == tuple:
-                            self.data_dict[user_id][key] = [embbed_dict[tuple(x)] for x in w_df[list(key)].values][-self.sequence_length:]
+                            self.data_dict[user_id][key] = np.array([embbed_dict[tuple(x)] for x in w_df[list(key)].values][-self.sequence_length:],
+                                                                    dtype=dtype)
                         else:
-                            self.data_dict[user_id][key] = [embbed_dict[x] for x in w_df[key].values][-self.sequence_length:]
+                            self.data_dict[user_id][key] = np.array([embbed_dict[x] for x in w_df[key].values][-self.sequence_length:],
+                                                                    dtype=dtype)
                     else:
-                        self.data_dict[user_id][key] = w_df[key].values[-self.sequence_length:].tolist()
-
+                        self.data_dict[user_id][key] = w_df[key].values[-self.sequence_length:].astype(dtype)
             else:
                 for key in self.column_config.keys():
+                    dtype = self.column_config[key]["dtype"]
                     if self.column_config[key]["type"] == "category":
                         embbed_dict = self.embbed_dict[key]
                         if type(key) == tuple:
-                            self.data_dict[user_id][key] = \
-                                self.data_dict[user_id][key] + [embbed_dict[tuple(x)] for x in w_df[list(key)].values]
+                            self.data_dict[user_id][key] = np.concatenate(
+                                [self.data_dict[user_id][key], [embbed_dict[tuple(x)] for x in w_df[list(key)].values]]
+                            )
                         else:
-                            self.data_dict[user_id][key] = \
-                                self.data_dict[user_id][key] + [embbed_dict[x] for x in w_df[key].values]
+                            self.data_dict[user_id][key] = np.concatenate(
+                                [self.data_dict[user_id][key], [embbed_dict[x] for x in w_df[key].values]]
+                            )
                     else:
-                        self.data_dict[user_id][key] = self.data_dict[user_id][key] + w_df[key].values.tolist()
-                    self.data_dict[user_id][key] = self.data_dict[user_id][key][-self.sequence_length:]
+                        self.data_dict[user_id][key] = np.concatenate(
+                            [self.data_dict[user_id][key], w_df[key].values]
+                        )
+                    self.data_dict[user_id][key] = self.data_dict[user_id][key][-self.sequence_length:].astype(dtype)
 
         return self
 
@@ -141,12 +149,12 @@ class FeatureFactoryForTransformer:
                 if self.column_config[key]["type"] == "category":
                     embbed_dict = self.embbed_dict[key]
                     if type(key) == tuple:
-                        w_dict[tuple(key)] = [embbed_dict[tuple(x)] for x in w_df[list(key)].values]
+                        w_dict[tuple(key)] = np.array([embbed_dict[tuple(x)] for x in w_df[list(key)].values])
                     else:
-                        w_dict[key] = [embbed_dict[x] for x in w_df[key].values]
+                        w_dict[key] = np.array([embbed_dict[x] for x in w_df[key].values])
                 else:
-                    w_dict[key] = w_df[key].values.tolist()
-            w_dict["is_val"] = w_df["is_val"].values.tolist()
+                    w_dict[key] = w_df[key].values
+            w_dict["is_val"] = w_df["is_val"].values
             group[user_id] = w_dict
         return group
 
@@ -162,18 +170,27 @@ class FeatureFactoryForTransformer:
                 ret_dict = copy.copy(self.data_dict[user_id])
 
             for key in self.column_config.keys():
+                dtype = self.column_config[key]["dtype"]
                 if self.column_config[key]["type"] == "category":
                     index = self.index_dict[key]
                     if type(key) == tuple:
-                        ret_dict[key] = ret_dict[key] + [self.embbed_dict[key][tuple(x[index])]]
+                        ret_dict[key] = np.concatenate(
+                            [ret_dict[key], [self.embbed_dict[key][tuple(x[index])]]]
+                        )
                     else:
-                        ret_dict[key] = ret_dict[key] + [self.embbed_dict[key][x[index]]]
+                        ret_dict[key] = np.concatenate(
+                            [ret_dict[key], [self.embbed_dict[key][x[index]]]]
+                        )
                 elif self.column_config[key]["type"] == "numeric":
                     index = self.index_dict[key]
-                    ret_dict[key] = ret_dict[key] + [x[index]]
+                    ret_dict[key] = np.concatenate(
+                        [ret_dict[key], [x[index]]]
+                    )
                 elif self.column_config[key]["type"] == "leakage_feature":
-                    ret_dict[key] = ret_dict[key] + [-1]
-                ret_dict[key] = ret_dict[key][-self.sequence_length:]
+                    ret_dict[key] = np.concatenate(
+                        [ret_dict[key], [-1]]
+                    )
+                ret_dict[key] = ret_dict[key][-self.sequence_length:].astype(dtype)
             # self.data_dict[user_id] = ret_dict
             return ret_dict
 

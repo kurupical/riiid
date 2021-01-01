@@ -1537,15 +1537,17 @@ class PreviousAnswer2(FeatureFactory):
 
         group = df.groupby(self.groupby)
         for user_id, w_df in group[["content_id", "answered_correctly"]]:
-            content_id = w_df["content_id"].values[::-1].tolist()
-            answer = w_df["answered_correctly"].values[::-1].tolist()
+            content_id = w_df["content_id"].values[::-1].astype("int16")
+            answer = w_df["answered_correctly"].values[::-1].astype("int8")
             if user_id not in self.data_dict:
                 self.data_dict[user_id] = {}
                 self.data_dict[user_id]["content_id"] = content_id[:self.n]
                 self.data_dict[user_id]["answered_correctly"] = answer[:self.n]
             else:
-                self.data_dict[user_id]["content_id"] = content_id + self.data_dict[user_id]["content_id"][len(content_id):][:self.n]
-                self.data_dict[user_id]["answered_correctly"] = answer + self.data_dict[user_id]["answered_correctly"][len(content_id):][:self.n]
+                self.data_dict[user_id]["content_id"] = np.concatenate([content_id,
+                                                                        self.data_dict[user_id]["content_id"][len(content_id):][:self.n]])
+                self.data_dict[user_id]["answered_correctly"] = np.concatenate([answer,
+                                                                                self.data_dict[user_id]["answered_correctly"][len(content_id):][:self.n]])
         return self
 
     def _all_predict_core(self,
@@ -1586,9 +1588,9 @@ class PreviousAnswer2(FeatureFactory):
                         is_update: bool=True):
         def get_index(l, x):
             try:
-                ret = l[:self.n].index(x)
+                ret = np.where(np.array(l[:self.n]) == x)[0][0]
                 return ret
-            except ValueError:
+            except IndexError:
                 return None
 
         def f(x):
@@ -1614,8 +1616,8 @@ class PreviousAnswer2(FeatureFactory):
             else:
                 ret = [self.data_dict[user_id]["answered_correctly"][last_idx], last_idx]
             if is_update:
-                self.data_dict[user_id][self.column] = [content_id] + self.data_dict[user_id][self.column]
-                self.data_dict[user_id]["answered_correctly"] = [None] + self.data_dict[user_id]["answered_correctly"]
+                self.data_dict[user_id][self.column] = np.concatenate([[content_id], self.data_dict[user_id][self.column]])
+                self.data_dict[user_id]["answered_correctly"] = np.concatenate([[None], self.data_dict[user_id]["answered_correctly"]])
             return ret
 
         ary = [f(x) for x in df[[self.groupby, self.column]].values]
