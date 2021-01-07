@@ -1536,16 +1536,16 @@ class PreviousAnswer2(FeatureFactory):
             is_first_fit: bool):
 
         group = df.groupby(self.groupby)
-        for user_id, w_df in group[["content_id", "answered_correctly"]]:
-            content_id = w_df["content_id"].values[::-1].astype("int16")
+        for user_id, w_df in group[[self.column, "answered_correctly"]]:
+            content_id = w_df[self.column].values[::-1].astype("int16")
             answer = w_df["answered_correctly"].values[::-1].astype("int8")
             if user_id not in self.data_dict:
                 self.data_dict[user_id] = {}
-                self.data_dict[user_id]["content_id"] = content_id[:self.n]
+                self.data_dict[user_id][self.column] = content_id[:self.n]
                 self.data_dict[user_id]["answered_correctly"] = answer[:self.n]
             else:
-                self.data_dict[user_id]["content_id"] = np.concatenate([content_id,
-                                                                        self.data_dict[user_id]["content_id"][len(content_id):][:self.n]])
+                self.data_dict[user_id][self.column] = np.concatenate([content_id,
+                                                                         self.data_dict[user_id][self.column][len(content_id):][:self.n]])
                 self.data_dict[user_id]["answered_correctly"] = np.concatenate([answer,
                                                                                 self.data_dict[user_id]["answered_correctly"][len(content_id):][:self.n]])
         return self
@@ -1609,7 +1609,7 @@ class PreviousAnswer2(FeatureFactory):
                     self.data_dict[user_id][self.column] = [content_id]
                     self.data_dict[user_id]["answered_correctly"] = [None]
                     return [None, None]
-            last_idx = get_index(self.data_dict[user_id]["content_id"], content_id) # listは逆順になっているので
+            last_idx = get_index(self.data_dict[user_id][self.column], content_id) # listは逆順になっているので
 
             if last_idx is None: # user_idに対して過去content_idの記録がない
                 ret = [None, None]
@@ -1628,6 +1628,153 @@ class PreviousAnswer2(FeatureFactory):
         df[f"previous_answer_index_{self.column}"] = index_ary
         df[f"previous_answer_index_{self.column}"] = df[f"previous_answer_index_{self.column}"].fillna(-99).astype("int16")
         return df
+
+
+
+class PreviousAnswer3(FeatureFactory):
+    feature_name_base = "previous_answer"
+    pickle_path = "../input/feature_engineering/previous_answer3_{}.pickle"
+    def __init__(self,
+                 groupby: str,
+                 column: str,
+                 n: int = 500,
+                 model_id: str = None,
+                 load_feature: bool = None,
+                 save_feature: bool = None,
+                 is_debug: bool = False,
+                 logger: Union[Logger, None] = None,
+                 is_partial_fit: bool = False):
+        self.groupby = groupby
+        self.column = column
+        self.n = n
+        self.load_feature = load_feature
+        self.save_feature = save_feature
+        self.model_id = model_id
+        self.is_debug = is_debug
+        self.logger = logger
+        self.model_id = model_id
+        if is_partial_fit: raise ValueError("can't partialfit=True")
+        self.is_partial_fit = is_partial_fit
+        self.data_dict = {}
+        self.make_col_name = f"{self.__class__.__name__}_{groupby}_{column}_{n}"
+
+    def fit(self,
+            df: pd.DataFrame,
+            feature_factory_dict: Dict[str,
+                                       Dict[str, FeatureFactory]],
+            is_first_fit: bool):
+
+        group = df.groupby(self.groupby)
+        for user_id, w_df in group[[self.column, "answered_correctly"]]:
+            content_id = w_df[self.column].values[::-1].astype("int16")
+            answer = w_df["answered_correctly"].values[::-1].astype("int8")
+            if user_id not in self.data_dict:
+                self.data_dict[user_id] = {}
+                self.data_dict[user_id][self.column] = content_id[:self.n]
+                self.data_dict[user_id]["answered_correctly"] = answer[:self.n]
+            else:
+                self.data_dict[user_id][self.column] = np.concatenate([content_id,
+                                                                         self.data_dict[user_id][self.column][len(content_id):][:self.n]])
+                self.data_dict[user_id]["answered_correctly"] = np.concatenate([answer,
+                                                                                self.data_dict[user_id]["answered_correctly"][len(content_id):][:self.n]])
+        return self
+
+    def _all_predict_core(self,
+                    df: pd.DataFrame):
+        self.logger.info(f"previous_encoding_all_{self.column}")
+        def f(series):
+            """
+            何個前の特徴だったか
+            :param series:
+            :return:
+            """
+            ary = []
+            for i in range(len(series)):
+                ary.append(series.shift(i).values)
+            ary = np.array(ary) # shape=(len(series), len(series)
+
+            diff_ary = ary[0:1, :] - ary[1:, :]
+            ret = []
+            for i in range(diff_ary.shape[1]):
+                w_ret = np.where(diff_ary[:, i] == 0)[0]
+                if len(w_ret) == 0:
+                    ret.append([-1]*5)
+                else:
+                    if len(w_ret) < 5:
+                        ret.append(w_ret.tolist() + [-1]*(5-len(w_ret)))
+                    else:
+                        ret.append(w_ret[:5].tolist())
+            return ret
+        self.logger.info(f"previous_encoding_all_{self.column}")
+        prev_answer_index = df.groupby("user_id")[self.column].progress_transform(f).fillna(-1).values
+
+        for idx in range(5):
+            prev_answer = df.groupby([self.groupby, self.column])["answered_correctly"].shift(idx+1).fillna(-1).values
+
+            df[f"previous_answer_index_{self.column}_{idx}"] = [x[idx] if x[idx] < self.n else None for x in prev_answer_index]
+            df[f"previous_answer_{self.column}_{idx}"] = [prev_answer[i] if x[idx] < self.n else None for i, x in enumerate(prev_answer_index)]
+            df[f"previous_answer_index_{self.column}_{idx}"] = df[f"previous_answer_index_{self.column}_{idx}"].fillna(-1).astype("int16")
+            df[f"previous_answer_{self.column}_{idx}"] = df[f"previous_answer_{self.column}_{idx}"].fillna(-1).astype("int8")
+
+        return df
+
+    def partial_predict(self,
+                        df: pd.DataFrame,
+                        is_update: bool=True):
+        def get_index(l, x):
+            try:
+                ret = np.where(np.array(l[:self.n]) == x)[0]
+                if len(ret) == 0:
+                    return None
+                else:
+                    return ret[:5]
+            except IndexError:
+                return None
+
+        def f(x):
+            """
+            index, answered_correctlyを辞書から検索する
+            data_dictはリアルタイム更新する。ただし、answered_correctlyはわからないのでnp.nanとしておく
+            :param x:
+            :param x:
+            :return:
+            """
+            none = [-1, -1, -1, -1, -1]
+            user_id = x[0]
+            content_id = x[1]
+            if user_id not in self.data_dict:
+                if is_update:
+                    self.data_dict[user_id] = {}
+                    self.data_dict[user_id][self.column] = [content_id]
+                    self.data_dict[user_id]["answered_correctly"] = [None]
+                    return [none, none]
+            ans_idxs = get_index(self.data_dict[user_id][self.column], content_id) # listは逆順になっているので
+
+            if ans_idxs is None: # user_idに対して過去content_idの記録がない
+                ret = [none, none]
+            else:
+                ans_corrs = [self.data_dict[user_id][idx] for idx in ans_idxs]
+                if len(ans_idxs) < 5:
+                    ans_idxs.append([-1] * (5 - len(ans_idxs)))
+                    ans_corrs.append([-1] * (5 - len(ans_idxs)))
+                ret = [ans_idxs, ans_corrs]
+            if is_update:
+                self.data_dict[user_id][self.column] = np.concatenate([[content_id], self.data_dict[user_id][self.column]])
+                self.data_dict[user_id]["answered_correctly"] = np.concatenate([[None], self.data_dict[user_id]["answered_correctly"]])
+            return ret
+
+        ary = [f(x) for x in df[[self.groupby, self.column]].values]
+        ans_ary = np.array([x[0] for x in ary])
+        index_ary = np.array([x[1] for x in ary])
+
+        for i in range(5):
+            df[f"previous_answer_{self.column}_{i}"] = ans_ary[:, i]
+            df[f"previous_answer_{self.column}_{i}"] = df[f"previous_answer_{self.column}_{i}"].fillna(-1).astype("int8")
+            df[f"previous_answer_index_{self.column}_{i}"] = index_ary[:, i]
+            df[f"previous_answer_index_{self.column}_{i}"] = df[f"previous_answer_index_{self.column}_{i}"].fillna(-1).astype("int16")
+        return df
+
+
 
 
 class ShiftDiffEncoder(FeatureFactory):
