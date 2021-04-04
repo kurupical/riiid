@@ -1,17 +1,24 @@
-from logging import Logger, StreamHandler, Formatter
+from logging import Logger, StreamHandler, Formatter, FileHandler
 import pandas as pd
 import numpy as np
 from sys import getsizeof, stderr
 from itertools import chain
 from collections import deque
+from datetime import datetime as dt
+import logging
 
-
-def get_logger():
+def get_logger(output_dir=None):
     formatter = Formatter("%(asctime)s|%(levelname)s| %(message)s")
     logger = Logger(name="log")
     handler = StreamHandler()
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+    if output_dir is not None:
+        now = dt.now().strftime("%Y%m%d%H%M%S")
+        file_handler = FileHandler(f"{output_dir}/{now}.log")
+        file_handler.setLevel(logging.INFO)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
     return logger
 
 def merge(df: pd.DataFrame,

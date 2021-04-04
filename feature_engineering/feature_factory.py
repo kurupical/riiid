@@ -1753,10 +1753,11 @@ class PreviousAnswer3(FeatureFactory):
             if ans_idxs is None: # user_idに対して過去content_idの記録がない
                 ret = [none, none]
             else:
-                ans_corrs = [self.data_dict[user_id][idx] for idx in ans_idxs]
+                ans_idxs = ans_idxs.tolist()
+                ans_corrs = [self.data_dict[user_id]["answered_correctly"][idx] for idx in ans_idxs]
                 if len(ans_idxs) < 5:
-                    ans_idxs.append([-1] * (5 - len(ans_idxs)))
-                    ans_corrs.append([-1] * (5 - len(ans_idxs)))
+                    ans_idxs.extend([-1] * (5 - len(ans_idxs)))
+                    ans_corrs.extend([-1] * (5 - len(ans_corrs)))
                 ret = [ans_idxs, ans_corrs]
             if is_update:
                 self.data_dict[user_id][self.column] = np.concatenate([[content_id], self.data_dict[user_id][self.column]])
@@ -1764,14 +1765,18 @@ class PreviousAnswer3(FeatureFactory):
             return ret
 
         ary = [f(x) for x in df[[self.groupby, self.column]].values]
-        ans_ary = np.array([x[0] for x in ary])
-        index_ary = np.array([x[1] for x in ary])
+        index_ary = np.array([x[0] for x in ary])
+        ans_ary = np.array([x[1] for x in ary])
 
-        for i in range(5):
-            df[f"previous_answer_{self.column}_{i}"] = ans_ary[:, i]
-            df[f"previous_answer_{self.column}_{i}"] = df[f"previous_answer_{self.column}_{i}"].fillna(-1).astype("int8")
-            df[f"previous_answer_index_{self.column}_{i}"] = index_ary[:, i]
-            df[f"previous_answer_index_{self.column}_{i}"] = df[f"previous_answer_index_{self.column}_{i}"].fillna(-1).astype("int16")
+        ans_cols = [f"previous_answer_{self.column}_{i}" for i in range(5)]
+        idx_cols = [f"previous_answer_index_{self.column}_{i}" for i in range(5)]
+
+        df[ans_cols] = ans_ary
+        df[ans_cols] = df[ans_cols].fillna(-1).astype("int8")
+
+        df[idx_cols] = index_ary
+        df[idx_cols] = df[idx_cols].fillna(-1).astype("int16")
+
         return df
 
 

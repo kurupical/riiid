@@ -2,22 +2,14 @@ import numpy as np
 import pandas as pd
 
 import gc
-import random
 from tqdm import tqdm
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import train_test_split
-
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
-import torch.nn.utils.rnn as rnn_utils
-from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
 from datetime import datetime as dt
 import os
-import glob
 import pickle
 import json
 from feature_engineering.feature_factory_for_transformer import FeatureFactoryForTransformer
@@ -26,7 +18,6 @@ from feature_engineering.feature_factory import \
     DurationPreviousContent, \
     ElapsedTimeBinningEncoder, \
     UserContentRateEncoder, \
-    QuestionQuestionTableEncoder2, \
     PreviousAnswer2
 from experiment.common import get_logger
 import time
@@ -644,12 +635,12 @@ if __name__ == "__main__":
     os.makedirs(output_dir, exist_ok=True)
     for cont_emb in [8]:
         for cat_emb in [256]:
-            dropout = 0.5
+            dropout = 0.2
             lr = 0.9e-3
             if is_debug:
                 batch_size = 8
             else:
-                batch_size = 128
+                batch_size = 512
             params = {"embed_dim": cat_emb,
                       "cont_emb": cont_emb,
                       "max_seq": 100,

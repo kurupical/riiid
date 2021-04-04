@@ -547,7 +547,7 @@ if __name__ == "__main__":
             time.sleep(1)
     output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
     os.makedirs(output_dir, exist_ok=True)
-    for lr in [0.5e-3]:
+    for lr in [1e-4]:
         for dropout in [0.1, 0.5]:
             cont_emb = 16
             cat_emb = 256

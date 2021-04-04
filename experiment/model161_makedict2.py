@@ -404,17 +404,17 @@ def main(params: dict,
         df = df.head(30000)
     df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1)
     column_config = {
-        ("content_id", "content_type_id"): {"type": "category"},
-        "user_answer": {"type": "leakage_feature"},
-        "answered_correctly": {"type": "leakage_feature"},
-        "part": {"type": "category"},
-        "prior_question_elapsed_time_bin300": {"type": "category"},
-        "duration_previous_content_bin300": {"type": "category"},
-        "prior_question_had_explanation": {"type": "category"},
-        "rating_diff_content_user_id": {"type": "numeric"},
-        "task_container_id_bin300": {"type": "category"},
-        "previous_answer_index_content_id": {"type": "category"},
-        "previous_answer_content_id": {"type": "category"}
+        ("content_id", "content_type_id"): {"type": "category", "dtype": np.int16},
+        "user_answer": {"type": "leakage_feature", "dtype": np.int8},
+        "answered_correctly": {"type": "leakage_feature", "dtype": np.int8},
+        "part": {"type": "category", "dtype": np.int8},
+        "prior_question_elapsed_time_bin300": {"type": "category", "dtype": np.int16},
+        "duration_previous_content_bin300": {"type": "category", "dtype": np.int16},
+        "prior_question_had_explanation": {"type": "category", "dtype": np.int8},
+        "rating_diff_content_user_id": {"type": "numeric", "dtype": np.float16},
+        "task_container_id_bin300": {"type": "category", "dtype": np.int16},
+        "previous_answer_index_content_id": {"type": "category", "dtype": np.int16},
+        "previous_answer_content_id": {"type": "category", "dtype": np.int8}
     }
 
     if is_make_feature_factory:

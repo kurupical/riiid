@@ -36,7 +36,7 @@ torch.manual_seed(0)
 np.random.seed(0)
 is_debug = False
 is_make_feature_factory = False
-load_pickle = False
+load_pickle = True
 epochs = 12
 device = torch.device("cuda")
 
@@ -306,7 +306,7 @@ class SAKTModel(nn.Module):
         return x.squeeze(-1)
 
 
-def train_epoch(model, train_iterator, val_iterator, optim, criterion, scheduler, device="cuda"):
+def train_epoch(model, train_iterator, val_iterator, optim, criterion, scheduler, epoch, device="cuda"):
     model.train()
 
     train_loss = []
@@ -384,6 +384,8 @@ def train_epoch(model, train_iterator, val_iterator, optim, criterion, scheduler
             preds.extend(torch.nn.Sigmoid()(output[:, -1]).view(-1).data.cpu().numpy().tolist())
             labels.extend(label[:, -1].view(-1).data.cpu().numpy())
             i += 1
+            if i > 100 and epoch < 6:
+                break
     auc_val = roc_auc_score(labels, preds)
 
     return loss, acc, auc, auc_val
@@ -526,7 +528,8 @@ def main(params: dict,
     criterion.to(device)
 
     for epoch in range(epochs):
-        loss, acc, auc, auc_val = train_epoch(model, dataloader_train, dataloader_val, optimizer, criterion, scheduler, device)
+        loss, acc, auc, auc_val = train_epoch(model, dataloader_train, dataloader_val, optimizer, criterion, scheduler,
+                                              epoch, device)
         print("epoch - {} train_loss - {:.3f} auc - {:.4f} auc-val: {:.4f}".format(epoch, loss, auc, auc_val))
 
     preds = []

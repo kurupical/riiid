@@ -54,7 +54,7 @@ pd.set_option("max_rows", 100)
 output_dir = f"../output/{os.path.basename(__file__).replace('.py', '')}/{dt.now().strftime('%Y%m%d%H%M%S')}/"
 os.makedirs(output_dir, exist_ok=True)
 
-is_debug = True
+is_debug = False
 wait_time = 0
 if not is_debug:
     for _ in tqdm.tqdm(range(wait_time)):

@@ -39,9 +39,9 @@ from transformers import AdamW, get_linear_schedule_with_warmup
 
 torch.manual_seed(0)
 np.random.seed(0)
-is_debug = True
+is_debug = False
 is_make_feature_factory = False
-load_pickle = True
+load_pickle = False
 epochs = 20
 device = torch.device("cuda")
 

@@ -26,7 +26,7 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 
-model_dir = "../output/ex_173/20201203071526"
+model_dir = "../output/ex_253/20201214130401"
 
 data_types_dict = {
     'row_id': 'int64',
@@ -112,7 +112,7 @@ def run(debug,
             df_test_prev["answered_correctly"] = answered_correctlies
             df_test_prev["user_answer"] = user_answers
             # df_test_prev = df_test_prev.drop(prior_columns, axis=1)
-            df_test_prev = df_test_prev[df_test_prev["answered_correctly"] != -1]
+            # df_test_prev = df_test_prev[df_test_prev["answered_correctly"] != -1]
             df_test_prev["answered_correctly"] = df_test_prev["answered_correctly"].replace(-1, np.nan)
             df_test_prev["prior_question_had_explanation"] = df_test_prev["prior_question_had_explanation"].fillna(-1).astype("int8")
 
@@ -155,7 +155,7 @@ def run(debug,
         df["answered_correctly"] = np.array(predicts).transpose().mean(axis=1)
         df_sample_prediction = df[df["content_type_id"] == 0][["row_id", "answered_correctly"]]
         env.predict(df_sample_prediction)
-        df_test_prev.append(df[cols + ["user_id", "tags"]])
+        df_test_prev.append(df[cols + ["user_id", "tags", "content_type_id"]])
         df_test_prev_rows += len(df)
         if i < 5:
             df.to_csv(f"{i}.csv")

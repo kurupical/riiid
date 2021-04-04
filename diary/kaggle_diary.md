@@ -1034,7 +1034,428 @@ stacking mlp_classifier(sklearn default parameters) : AUC=0.8006
 * model154: model150 + cat_embedding をなくす (1epochのみで) -> だめぽい
 * model155: model151 + previous_answer_content_id ★lr_scheduler epochs=20として設定
 * model156: model155 + cat_emb(sub) 8, 16 ★lr_scheduler epochs=20として設定
+  * cat_emb=8: 0.7877
+  * cat_emb=16: 0.7876
 * model157: model155 + cont_emb: 8, 16, 32, 64 / cat_emb(content_id): 128, 256 ★lr_scheduler epochs=20として設定
-* model158: model155 + all_data
+  * cont_emb/cat_emb
+    *8/128: 0.7878
+    *8/256: 0.7882
+    *16/128: 0.7878
+    *16/256: 0.7881
+    *32/128: 0.7876
+    *32/256: 0.7870
+* model158: model155 + all_data ... dout0.2だとなんか発散してしまった。0.5で再トライ->だめ
+* model159: model158 + lr1e-3 + dout0.5 (発散は乱数が悪かった?) =>ダメ
+
+# 2020/12/22
+## experiments
+* model160: model157 + cont_emb8/cat_emb256
+* model161: model160 + dout0.2 + batch_size512 -> CV: 0.8027(epoch9) 0.8024(epoch12)
+* ex_277: ex_271 + pos_weight=1.5 -> CV: 0.79015
+* ex_278: ex_271 + pos_weight=0.5 -> CV: 0.79024
+* ex_279: ex_271 + pos_weight=0.75 -> CV: 0.7904
+* ex_280: ex_271 + pos_weight=0.9 -> CV: 0.79024
+
+* model162: past_content_id dim=256, cat_embでembedding1/2に -> CV: 0.7860
+* model163: past_content_id dim=128
+* model164: model162 + past_content_idとpast_answered_correctlyは足す -> CV: 0.7871
+* model165: model163 + past_content_idとpast_answered_correctlyは足す
+* model166: 
+
+# 2020/12/23
+## experiments
+* model167: enc/decを入れ替え + labelのミス(データないとこが0になってた)修正
+* model168: model157 + labelのミス(同上)修正
+* model170: addの構造  
+* model171: model170 + cat_embeddingなし
+* model172: model168 + n_layers=1 CV: 0.7843(epoch=5)
+* model173: model172 + embed_dimを節約(小さいのは8, timeとかは16)
+* model174: model172 + user_answerあてにいくサブタスク追加(最終層で枝分かれ) -> CV: 0.7823(epoch=7)
+* model175: model174 + 枝分かれをFFNから -> CV: 0.7822(epoch=6)
+* model176: (欠番)
+* model177: model175 + concatするまえにnn.Linear -> CV: 0.7825(epoch=7)
+* model178: model172 + num_training_stepのepochsを20固定だったのをepochsにあわせる　CV: 0.7840(epoch=5)
+* model179: model175 + nn.Linearをconcatする前に -> CV: 0.7820(epoch=5)
+* model180: model170 + encoder-decoderの構成ちょっと変える だめ
+* model181: model179 + concatまえにdrop0.5
+* model182: model167ベースで、encoder/decoderをcatemb -> cat -> TransformerEncoderに変更 -> CV: 0.7713
+* model183: model182ベースで catじゃなくてadd
+* model184: model172 + dropout(transformer)はdefault値に変更 -> CV: 0.7845
+* model186: model172 + AdaBelief -> CV: 0.7848(epoch=4)
+* model187: model186 + model184 + content/answered_correctlyの組み合わせでcategory -> CV: 0.7819
+* model188: model167 + seq_lenを100->99に戻す -> CV: 0.7748(epoch=7)
+* model189: model186 - user_answer -> CV: 0.7848(epoch=7) same...
+* model190: model189 + 全データ、時間をあわせる
+* model191: model186 - scheduler - AdamW + RAdam -> CV: 0.7847 (epoch=6)
+* model192: model186 + Mish -> CV: 0.7847 (epoch=6)
+* model193: model186 + full data (250ms/iter)
+
+# 2020/12/24
+* model194: model193 + cont_embのGRUをやめる
+* model195: model186 + bs=512/num_warmup_steps=1000
+* model195_2: model186 + bs=512/num_warmup_steps=250
+* model195_3: model195_2 + lr tuning
+  * lr=1.5e-3 CV: 0.7871(epoch=11)
+  * lr=2e-3 CV: 0.7871(epoch=12)
+  * lr=3e-3 CV: 0.7800(epoch=4)
+* model196: model195_3 + embedding dropout
+  * 0.2: CV 0.7866
+  * 0.5: CV 0.7859
+* model197: model195_3 + positional encoding -> CV: 0.7861
+* model198: model195_3 + label smooth (pos=0.9, neg=0.1) -> CV: 0.7868
+* model199: model195_3 + label smooth (pos=0.85) -> CV: 0.7868
+* model200: model195_3 + script merge takoi-san 10M row -> CV: 0.7859(epoch=11)
+* model201: model200 + full-data (dropout=0.3)
+  * dropout=0.3 (model201)
+  * dropout=0.1 (model201_2)
+
+
+## other
+* takoi-sanプログラムとのマージ
+  * make_feather
+  * make_feather_virtualtime
+  * feature_sequence
+    ()内に記載の後処理を自分で実装すること
+    * fe017 
+      * content_id (+2)
+      * prior_question_had_explanation (fillna(-1) +2)
+      * prior_question_elapsed_time 
+      * content_id_with_lecture (content_id+14000, content_type_id=1)
+      * answered_correctly (+3)
+      * task_container_id (+1)
+    * fe018
+      * part (+1)
+    * fe019
+      * timedelta
+    * fe095
+      * rating (特になし)
+    * fe032
+      * content_id_delta (fillna(-1) + 2)
+      * last_content_id_acc (fillna(-1) + 2)
+
+# 2020/12/25
+* model204: 
+  * model201 + gru/lstm concat lr=0.5e-3 dropout=0.5 -> CV: 0.7925
+* model200_2: baseline -> CV: 0.7955
+* model205: model200_2 + tags(1~4) -> CV: 0.7934
+* model206: model200_2 + lag_time
+
+# 2020/12/26
+* model207: model200_2 + last50データのみでloss計算, データを倍にする
+  * dropout=0.5だとlossが暴れた
+  * dropout=0.2でもだめそう
+  * lr=0.5e-3 -> CV: 0.7891
+  * model207_2: dropout=0.5にもどす 
+
+# 2020/12/27
+* model208: model161 + takoi-san validation -> CV: 0.8068(epoch=10), 0.8066(epoch=12)
+* model208-2: model208 + dropout=0.1, num_warmup_steps=3000  -> CV: 0.8062
+* model208-3: model208 + dropout=0.5 -> CV: 0.8061 (train=val=0.8061) のびしろある!?
+* model209: rate系全部入れる -> CV: 0.7875 (epoch=9)
+  * model209-2: BatchNormやめてrateは全部手で標準化する　-> これもダメそう
+* model210: baseline -> CV: 0.7932
+* model211: model210 + timediff-elapsedtime追加 -> CV: 0.7940
+* model212: model210 + cat embedding32から16に -> CV: 0.7937
+* model213: model210 + (prior_content_id + user_answer) -> CV: 0.7934
+* model214: model210 + diff_timedelta_groupby_user_id_part(cap100k) -> CV: 0.7930
+  * model214_2: ↑間違えたので再度。。 -> CV: 0.7932
+* model215: model214 + cap100kなしversion -> CV: 0.7934 ...採用?
+  * model215_2: binning=500 -> CV: 0.7932
+* model216: model209-2 + rateごとにcontinuous_blockを準備 -> CV: 0.7926
+* model217: model210 + feedforward [256, 512, 1024]
+  * 256: 0.7921
+  * 512: 0.7932
+  * 1024: 0.7933
+* model218: model210 + model211_2 + model212 + model213 
+
+* predict_model_161_3: 高速化(merge部分, partのみ取得)
+* log見てると, dataloader作るのに80msくらい使っちゃってるっぽい
+  https://www.kaggle.com/kurupical/riiid-ex36-39-41-0-3-kurupical-model208-logging
+
+# 2020/12/28
+* model211_2: binningのバグ修正(-100~400でbin500) -> CV: 0.7939(!?)
+* model211_3: (150~450でbin300) -> CV: 0.7936
+* model211_4: model211_2 + lr1.5e-3 -> だめ
+* model216_2: rateはfillna(mean)処理  
+* model208-5: model208 + dropout=0.5 + lr=1.5e-3
+
+* model218: model210+211+212+213 + code optimization-> CV: 0.7935
+* model210_2: model210 + code optimization (model218で落ちてるの謎なので、コードにバグがないかチェック) -> CV: 0.7931
+* dataloaderの処理効率化: 結局num_workersが悪さしてただけだった
+  * predict_model_161_4 
+  * model208_4
+
+* model219: model210+211+212 -> CV: 0.7935
+* model220: enc/dec trnsformer -> CV: 0.7789
+  * model220_2: transformer dropoutだけdefault -> CV: 0.780x
+  * model220_3: cat embedding追加 -> CV: 0.7819
+  * model220_4: encoder_embeddingにLayerNorm追加
+* model221: model218 - cat-emb 一部だけ16 -> CV: 0.7937
+* model222: model221 + dim_feedforward=512
+* model223: model211と同じでcode optimized -> CV: 0.7938
+* model224: model223 + lstm only * 2 -> CV: 0.7928
+  * model217 CV:0.7933 + model224 CV: 0.7928 => ensemble CV:0.7951
+
+* model225: model223 + all_data -> CV: 0.8086(bs=512)
+  * model225-2: bs=128 -> 発散...
+  * mdoel225-3: lr=0.8e-3/num_warmup_steps=12000/bs=64
+* model226: model224 + all_data -> CV: 0.8097(bs=128)
+
+# 2020/12/29
+* model227: model224 + gru only * 2 -> CV: 0.7923
+* model228: model227 + all -> CV: 0.8092
+* model229: model224 + lstm only * 3 -> CV: 0.7922
+
+* model230: prev_ansのn=500 -> CV: 0.7936
+* model231: model230 + all_data (prev_ans=500のデータ作る)
+* model232: model220_4 + all_data -> CV: 0.8041
+* model232_2: model232 + num_warmup_stemps=10000 -> 
+
+## bugfix
+* predict_model161_4_test, predict_model161_5_test で出力が異なる。
+  df_question, df_lectureとの結合処理が原因っぽい。そこ戻したら結果は一致
+  スコアチェックちゃんとやる。predict_model225_226はvalidation_dataの一部でチェック
+  
+# 2020/12/30
+* model233: model220_4 + n_dim=512/n_layer=4 (SAINT実装) -> CV: 0.7820(epoch6/6)
+  * model233_2: model233 + epoch=10
+* model234: model220_4 + enc/dec逆 -> CV: 0.7823
+* model235: model220_4 + dropout=0(transformer) -> CV: 0.7805
+* model236: model223 + dropout=0(transformer) -> だめ
+* model237: model223 + 最終層skip_connect self.ffn(x) + att_dec -> self.ffn(x) + xに変更 -> CV: 0.7929
+  だけどまだ伸びそう(loss的に) epochs20 -> 
+* model238: model223 + skip_connection (cat_emb) -> CV: 0.7935
+      def forward(self, x):
+        out = self.layer_norm(x)
+        out = self.linear(out)
+        out = self.layer_norm(out)
+        return x + out
+* model239: model223 + skip_connection (cat_emb) -> 発散したのでlr=0.7e-3に変更 -> CV: 0.7930
+    def forward(self, x):
+        x = self.layer_norm(x)
+        out = self.linear(x)
+        out = self.layer_norm(out)
+        return x + out
+* model240: model223 + skip_connection (cat_emb) -> 発散したのでlr=0.7e-3に変更 -> CV: 0.7930
+    def forward(self, x):
+        out = self.linear(x)
+        out = self.layer_norm(out)
+        return x + out
+
+* model241: model223 + feedforward=1024 -> CV: 0.7938
+* model242: model223 + transformer_activation gelu -> CV: 0.7926
+
+* stacking001:
+  takoi-san lgbm/transformer(ex55,56,57) + model225,226,228
+  [single]
+  model=model225 auc=0.8063
+  model=model226 auc=0.8073
+  model=model228 auc=0.8069
+  model=ex55 auc=0.8044
+  model=ex56 auc=0.8046
+  model=ex57 auc=0.8047
+  model=lgb_pred auc=0.7989
+  
+  [12/29アンサンブル]
+  model225 + model226 + (ex55+ex56+ex57)/3 = 0.8102
+  
+  [stacking by lgbm]
+  lgbm抜き: 0.81047
+  lgbmあり: 0.81064
+  
+  [stacking other model]
+  mlp(sklearn default): 0.81038
+  logistic reg(sklearn default): 0.81012
+
+* stacking002(model225+226+228+ex55+56+57) CV: 0.81042
+
+# 2020/12/31
+* model243: model223 + LIT -> CV: 0.7926(train=0.7904)
+      def forward(self, x):
+        x = self.linear1(x)
+        x = self.activation(x)
+        x = self.dropout(x)
+        x, _ = self.lstm(x)
+        x = self.norm_lstm(x)
+        x = self.dropout(x)
+        x = self.linear2(x)
+  * model243_2: with 15epochs! -> CV: 0.7941(train=0.7955)
+  * model243_3: 243_2 + lr=1e-3!  -> CV: 0.7944/17epoch
+  
+
+* model244: model223 + LIT(skip) -> CV: 0.7911(train=0.7880)
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.activation(x)
+        x = self.dropout(x)
+        lstm, _ = self.lstm(x)
+        x = self.norm_lstm(lstm) + x
+        x = self.dropout(x)
+        x = self.linear2(x)
+* model245: -> CV: 0.7915
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.activation(x)
+        x = self.dropout(x)
+        x, _ = self.lstm(x)
+        x = self.dropout(x)
+        x = self.linear2(x)
+
+* model246: model243 + hidden=input -> 発散...
+  model246_2: lr=0.7e-3 -> CV: 0.7925(train=0.7932/15epoch)
+  model246_3: lr=0.7e-3*20epochs -> CV: 
+* model247: continuousは一番最後の層までスルー -> 伸びなさそう
+* model248: model243_3 + all -> CV: 0.8092
+* model249: model224 + layernorm(lstm) + x -> layernorm(lstm + x) -> CV: 0.7926 ★採用!!
+
+# 2021/1/1
+* stacking003 stacking002 + model246:
+  CV: 0.81060
+* stacking004(test): tcnも加えてみる
+  [only lstm+transformer] CV: 0.79937 -> [+tcn(model252)] CV: 0.79951 (+0.0001)
+
+* model250: model248 + content_type_id を入れる -> 遅い! CV:0.7909(15 epochs)
+* model251: model223 + 構造変更: lstm -> Encoder*4 -> だめっぽい CV: 0.7885(epoch 6)
+* model252: model224 - lstm + tcn -> CV: 0.7884
+  * https://arxiv.org/pdf/1803.01271.pdf
+  * https://github.com/locuslab/TCN/tree/master/TCN
+  
+  * model252_2: param tune: n_channel = [2, 3], kernel_size = [3, 5, 7]
+    * n_channel = 2
+      * kernel_size = 3: CV: 0.7872
+      * kernel_size = 5: CV: 0.7876
+      * kernel_size = 7: CV: 0.7877
+    * n_channel = 3
+      * kernel_size = 3: CV: 0.7879
+      * kernel_size = 5: CV: 0.7880
+      * kernel_size = 7: CV: 0.7881
+  * model252_3: Chompを最終層じゃなくて最初の層にする。。 -> LEAK...
+  
+
+* model253: model243_3 + 最終層lstmからtcnへ
+* model254: model243_3 + LITをLSTMからTCNへ差し替え -> 精度悪そう＋バグって動かないし没
+* model255: model243_3 + 最終層: lstm+tcn -> CV: 0.7888
+  * model255_2: lstm + tcn / 2 -> これもダメでしょたぶんということでカット
+* model256: model223 + np.log10(timedelta)  -> CV: 0.7940(train 0.7947)
+* model257: model223 + elasped_time (priorじゃなくて) -> これ、結局prior_questionとかわんなくね. -> 却下
+* model258: model223 + PriorQuestion2修正 -> CV: 0.7937(train=0.7952 まだ伸びる)
+
+* model259: model243_3 + model256 -> CV: 0.7948(epoch=17)
+* model260: model258 + rate_diff as category(-300~300 10刻み, 71category) -> だめ
+* model261: model243_3 + weight(att_decのあと) -> CV: 0.7937(train=0.7952)
+* model262: model261 + cap(3日) -> CV: 0.7938(train=0.7946)
+* model263: model262 + weightをencoder前に入れる -> CV: 0.7944(train=0.7953)
+* model264: model248 + RAdam -> CV: 0.8055(訓練が遅いだけっぽいけど…)
+  * model264_2 (PreviousAnswer2のquestion_idのみ)
+* model265: model263 + cap(1日) -> CV: 0.7942(train=0.7955)
+* model266: model262 + cap(1日) -> CV: 0.7939(train=0.7950)
+
+# 2020/1/2
+* model267: model259 + model258 -> CV: 0.7949(17epochs)
+* model263_2: model263 + lr=2e-3 -> Overfitted...
+* model268: model267 + partとquestion_idは足す (content_idの距離を取りたい!) -> CV: 0.7950
+* model244_2: model244 with 17epochs  CV: 0.7933
+* model252_4 param tune: n_channel= [4, 5], kernel_size = [5, 7, 11]
+  * n_channel = 4
+    kernel_size = 5: CV 0.7886
+    kernel_size = 7: CV 0.7880
+    kernel_size = 11: CV: 0.7866
+  * n_channel = 5
+    kernel_size = 5: CV 0.7874
+* model269: double encoder -> あんま伸びなさそう
+* model270: model249 + model256 + model258 -> CV: 0.7936
+  * model270_2: normal*2 -> normal -> ×
+* model271: model270 + LSTM*3 series
+  model271 normal -> CV: 0.7934
+  model271_2: normal -> normal -> 1/2 -> CV: 0.7916
+  model271_3: normal -> *2 -> normal -> CV: 0.7911
+  -> 271_2, 271_3はskip connectionがなくなる形になった。skip connectionが効いてるのかな?
+* model272: model270 + multihead lstm -> CV: 0.7848
+* model273: model257ベースで, elapsed_timeも予想しに行くmodelを作成する -> CV: 0.7936
+  * model273_2: MSELossに使うyは1/100 -> 1/10 -> CV: 0.7935
+* model274: model270 + model263 -> CV
+
+* model275: model270 + ALL CV: 0.8095(dropout=0.2, train=0.8125)
+* model276: model275 - lstm + tcn
+  dropout=0.2: CV: 0.8057 (train=0.8080)
+* model277: model268 + ALL
+  * dropout=0.1: 
+    * num_warmup_steps3000: CV: 0.8082
+    * num_warmup_steps10000: CV: 0.8098 ★こっちがいい!! →20000も試そう
+  * dropout=0.2:
+    (num_warmup_step3000の2epoch目までを確認したがあんまり変わらずだった)
+
+## paper
+https://link.springer.com/chapter/10.1007/978-3-030-52240-7_46
+
+https://arxiv.org/pdf/2002.05505.pdf
+
+# 2020/1/4
+* stacking006
+  * model275 + model276 + model277 (normal) -> CV: 0.81162..
+  * ↑ + model277_2(dropout=0.1, num_warmup=10000) -> CV: 0.8118
+  * ↑ + model277_epoch10
+  
+* model278: model270 + FFNに、embeddingあとの生特徴を入れる! -> だめそう(CV: 0.7900(train=0.796x))
+* model279: model270 + pred_layer少し緩やかに -> CV: 0.7928
+  * model279_2: 改造2 (original -> 128 -> 1) -> CV: 0.7930(epoch=10)
+  * model279_3: model279 + GELU -> CV: 0.7929
+* model280: model270 + FFN with residual -> CV: 0.7935
+* model281: model270 + timeseries weight (log10(cumsum(timedelta))) as category -> CV: 0.7936
+  * model281_2: add -> CV: 0.7923(train=0.7911)
+  * model281_3: 今を1として計算 -> CV: 0.7933(train=0.7952)
+  * model281_4: model281_2 with 17epochs
+* model282: model270 + lookahead -> CV: 0.7929
+* model283: model270 + weight_decay=0.1 -> CV: 0.7952! (+0.0016!!)
+  * weight_decay = 1.0 -> CV: 0.7915(train=0.7928)
+  * weight_decay = 0.2 -> CV: 0.7953(train=0.7982)
+  * weight_decay = 0.05 -> CV: 0.7942(train=0.7983)
+* model284: model268 + takoi-san conv1d_stack -> だめぽい
+* model285: model268 - lit -> CV: 0.7935 (-0.0015) だめ
+* model286: model283(weight_decay=0.2) + catのlinear -> single head attention  -> CV: 0.7931(-0.002)
+  * model286_2: encoder dropout=0.1(default) & 11 epochs 没
+* model287: model268 + weight_decay=0.2 -> CV: 0.7968 (epoch12)
+  
+* model288: model275 + weight_decay=0.2 + model290 num_warmup_steps[3000, 10000, 20000]/dropout[0.2, 0.5]
+  * dropout=0.2
+    num_warmup_steps=3000 CV: 0.8083(train=0.8034)
+    num_warmup_steps=10000 CV: 0.8082(train=0.8032)
+    num_warmup_steps=20000 CV: 0.8082(train=0.8031)
+  underfittingしてる 
+  * model288_2: epoch=12, weight_decay=0.1 -> CV: 0.8102(train=0.8067)
+  * model288_3: epoch=20, weight_decay=0.1 -> CV: 0.8119(train=0.8150)
+  * model288_4: epoch=25, weight_decay=0.2, cat_small=16 -> CV: 0.8117(train=0.8110)
+* model289: model287 + model286 ... 欠番(LSTMで試してから移行する!)
+* model290: model283 + concat(cont, cate)のうしろにlinear -> CV: 0.7960
+  * model290_2: model290 + dropout -> CV: 0.7947 (train=0.7939/epoch13でもう少し伸びそうだが... )
+* model291: model283 + weight_decay = 0 (余裕あったらまたやるS)
+* model292: model290 + RAdam -> CV: 0.7953
+  * 292_2: weight_decay=0
+* model293: model286のideaを、TransformerEncoderじゃなくてSelfAttentionにする -> dropout=0.5だと学習の進みが遅い。却下
+  * model293_2: dropout=0 -> CV: 0.7856...
+* paper etc
+  * LookAhead https://github.com/michaelrzhang/lookahead
+  * 
+
+# 2021/1/5
+* model294: model277 + weight_decay=0.1 + model290
+  * num_warmup_steps=10000 -> CV: 0.8114(epoch=19, train=0.8131)
+  * num_warmup_steps=20000
+* model288_4: epoch=25, weight_decay=0.2
+
+# 2021/1/6
+* model296: model288 + SEBlock(add) 0.7944 (epoch=11)
+* model297: model288 + SEBlock(concat) 0.7944(epoch=9)
+* model298: model288 + concat -> CV: 0.7952(epoch=10)
+* model299: model288 + TCN layer before LSTM
+* model300: model296 + all 
+
+* model301: model294 + dropout=0.5/0.1
+
+# 2020/1/7
+* model302: previousanswer0-4
+  ※これのtransformer用の辞書は手作りした.0~500までキーを存在するように
+ya
 </div>
+
 

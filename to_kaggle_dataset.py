@@ -4,15 +4,17 @@ import glob
 
 if os.path.isdir("riiid_code"):
     shutil.rmtree("riiid_code")
-os.makedirs("riiid_code/pretrained")
+os.makedirs("riiid_code/pretrained/model302")
 
-for f in glob.glob("output/ex_209/20201210074416/*"):
+for f in glob.glob("output/model302/20210107150104/*"):
     if "csv" in f:
         continue
     if os.path.isdir(f):
-        shutil.copytree(f, f"riiid_code/pretrained/{os.path.basename(f)}")
+        shutil.copytree(f, f"riiid_code/pretrained/model302/{os.path.basename(f)}")
     else:
-        shutil.copyfile(f, f"riiid_code/pretrained/{os.path.basename(f)}")
+        shutil.copyfile(f, f"riiid_code/pretrained/model302/{os.path.basename(f)}")
+
+
 shutil.copytree("experiment", "riiid_code/experiment/")
 shutil.rmtree("riiid_code/experiment/mlruns")
 os.makedirs("riiid_code/feature_engineering")

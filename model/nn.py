@@ -17,7 +17,6 @@ from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.layers import Dense, Dropout, ReLU, BatchNormalization, Input, Add, PReLU
 from tensorflow.keras import regularizers
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-from tfdeterminism import patch
 from sklearn.metrics import roc_auc_score
 
 def train_nn_cv(df: pd.DataFrame,
@@ -50,13 +49,12 @@ def train_nn_cv(df: pd.DataFrame,
     train_idx = []
     val_idx = []
     np.random.seed(0)
-    np.random.seed(0)
     for _, w_df in df.groupby("user_id"):
-        if np.random.random() < 0.1:
+        if np.random.random() < 0.01:
             # all val
             val_idx.extend(w_df.index.tolist())
         else:
-            train_num = int(len(w_df) * 0.9)
+            train_num = int(len(w_df) * 0.95)
             train_idx.extend(w_df[:train_num].index.tolist())
             val_idx.extend(w_df[train_num:].index.tolist())
 

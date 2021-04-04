@@ -41,8 +41,8 @@ from feature_engineering.feature_factory import \
 
 from experiment.common import get_logger, total_size
 import pandas as pd
-from model.lgbm import train_lgbm_cv, train_lgbm_cv_newuser
-from model.cboost import train_catboost_cv
+from model.lgbm import train_lgbm_cv_newuser_train95
+from model.cboost import train_catboost_cv_train95
 from sklearn.model_selection import KFold
 from datetime import datetime as dt
 import numpy as np
@@ -177,49 +177,37 @@ def make_feature_factory_manager(split_num, model_id=None):
                                                     save_feature=not is_debug)
     return feature_factory_manager
 
+def prepare_df(fit=False):
+    fname = "../input/riiid-test-answer-prediction/train_merged.pickle"
 
-fname = "../input/riiid-test-answer-prediction/train_merged.pickle"
+    df = pd.read_pickle(fname)
 
-df = pd.read_pickle(fname)
+    if is_debug:
+        df = pd.concat([df.head(500), df.tail(500)])
 
-if is_debug:
-    df = pd.concat([df.head(500), df.tail(500)])
+    model_id = "all"
 
-model_id = "all"
+    df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
+    df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
+    feature_factory_manager = make_feature_factory_manager(split_num=1, model_id=model_id)
+    print("all_predict")
+    df = feature_factory_manager.all_predict(df)
 
-df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
-df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
-feature_factory_manager = make_feature_factory_manager(split_num=1, model_id=model_id)
-print("all_predict")
-df = feature_factory_manager.all_predict(df)
-print("all_predict")
-params = {
-    'objective': 'binary',
-    'num_leaves': 96,
-    'max_depth': -1,
-    'learning_rate': 0.3,
-    'boosting': 'gbdt',
-    'bagging_fraction': 0.5,
-    'feature_fraction': 0.7,
-    'bagging_seed': 0,
-    'reg_alpha': 100,  # 1.728910519108444,
-    'reg_lambda': 20,
-    'random_state': 0,
-    'metric': 'auc',
-    'verbosity': -1,
-    "n_estimators": 10000,
-    "early_stopping_rounds": 50
-}
-
-df.tail(1000).to_csv("exp028.csv", index=False)
-
-df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_5_ans"], axis=1)
-df = df[df["answered_correctly"].notnull()]
-
+    if not fit:
+        df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_5_ans",
+                      "tag", "content_type_id"],
+                     axis=1, errors="ignore")
+        df = df[df["answered_correctly"].notnull()]
+        df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in
+                      df.columns]
+    return df
 # df["lec_count"] = df.groupby("user_id")["content_type_id"].cumsum().replace(0, np.nan)
 # df["final_lec_idx"] = df.groupby(["user_id", "lec_count"]).cumcount()
 # df = df.drop("lec_count", axis=1)
 
+model_id = "all"
+
+df = prepare_df()
 params = {
     'objective': 'binary',
     'num_leaves': 96,
@@ -237,24 +225,20 @@ params = {
     "n_estimators": 10000,
     "early_stopping_rounds": 50
 }
-df.tail(1000).to_csv("exp028.csv", index=False)
 
-df = df.drop(["user_answer", "tags", "type_of", "bundle_id", "previous_5_ans"], axis=1)
-df.columns = [x.replace("[", "_").replace("]", "_").replace("'", "_").replace(" ", "_").replace(",", "_") for x in df.columns]
-df = df[df["answered_correctly"].notnull()]
 print(df.columns)
 print(df.shape)
 
 categorical_feature = ["content_id"]
 print(model_id)
-train_lgbm_cv_newuser(df,
-                      categorical_feature=categorical_feature,
-                      params=params,
-                      output_dir=output_dir,
-                      model_id=model_id,
-                      exp_name=model_id,
-                      is_debug=is_debug,
-                      drop_user_id=True)
+train_lgbm_cv_newuser_train95(df,
+                              categorical_feature=categorical_feature,
+                              params=params,
+                              output_dir=output_dir,
+                              model_id=model_id,
+                              exp_name=model_id,
+                              is_debug=is_debug,
+                              drop_user_id=True)
 params = {
     'n_estimators': 12000,
     'learning_rate': 0.1,
@@ -265,19 +249,22 @@ params = {
     'od_wait': 400,
     'task_type': 'GPU',
     'max_depth': 8,
-    'l2_leaf_reg': 50,
+    'l2_leaf_reg': 200,
     "verbose": 100
 }
 if is_debug:
     params["n_estimators"] = 100
-train_catboost_cv(df,
-                  params=params,
-                  output_dir=output_dir,
-                  model_id=model_id,
-                  exp_name=model_id,
-                  is_debug=is_debug,
-                  cat_features=None,
-                  drop_user_id=True)
+
+df = prepare_df()
+
+train_catboost_cv_train95(df,
+                          params=params,
+                          output_dir=output_dir,
+                          model_id=model_id,
+                          exp_name=model_id,
+                          is_debug=is_debug,
+                          cat_features=None,
+                          drop_user_id=True)
 
 df_oof_lgbm = pd.read_csv(f"{output_dir}/oof_{model_id}_lgbm.csv")
 df_oof_cat = pd.read_csv(f"{output_dir}/oof_{model_id}_catboost.csv")
@@ -291,8 +278,7 @@ score, weight = calc_optimized_weight(df_oof)
 
 feature_factory_manager = make_feature_factory_manager(split_num=1)
 
-fname = ""
-model_id = os.path.basename(fname).replace(".pickle", "")
+model_id = "all"
 data_types_dict = {
     'row_id': 'int64',
     'timestamp': 'int64',
@@ -308,34 +294,22 @@ feature_factory_manager.model_id = model_id
 for column, dicts in feature_factory_manager.feature_factory_dict.items():
     for factory_name, factory in dicts.items():
         factory.model_id = model_id
-
-if is_debug:
-    df = pd.concat([pd.read_pickle(fname).head(500), pd.read_pickle(fname).tail(500)])
-else:
-    df = pd.read_pickle(fname).sort_values(["user_id", "timestamp"])
-df["answered_correctly"] = df["answered_correctly"].replace(-1, np.nan)
-df["prior_question_had_explanation"] = df["prior_question_had_explanation"].fillna(-1).astype("int8")
-df = pd.concat([pd.merge(df[df["content_type_id"] == 0], df_question,
-                         how="left", left_on="content_id", right_on="question_id"),
-                pd.merge(df[df["content_type_id"] == 1], df_lecture,
-                         how="left", left_on="content_id", right_on="lecture_id")]).sort_values(
-    ["user_id", "timestamp"]).reset_index(drop=True)
-# df = feature_factory_manager.feature_factory_dict["content_id"]["TargetEncoder"].all_predict(df)
+df = prepare_df()
+model_id = "all"
 feature_factory_manager.fit(df, is_first_fit=True)
 
-if i == 0:
-    size = 0
-    for k, v in feature_factory_manager.feature_factory_dict.items():
-        for kk, vv in v.items():
-            try:
-                w_size = round(total_size(vv.data_dict) / 1_000_000, 2)
-                print(f"{k}-{vv}: len={len(vv.data_dict)} size={w_size}MB")
-                size += w_size
-            except Exception as e:
-                print(f"{k}-{kk} error")
-                print(e)
-    print(f"-------------------")
-    print(f"total_size={size}MB")
+size = 0
+for k, v in feature_factory_manager.feature_factory_dict.items():
+    for kk, vv in v.items():
+        try:
+            w_size = round(total_size(vv.data_dict) / 1_000_000, 2)
+            print(f"{k}-{vv}: len={len(vv.data_dict)} size={w_size}MB")
+            size += w_size
+        except Exception as e:
+            print(f"{k}-{kk} error")
+            print(e)
+print(f"-------------------")
+print(f"total_size={size}MB")
 
 for dicts in feature_factory_manager.feature_factory_dict.values():
     for factory in dicts.values():

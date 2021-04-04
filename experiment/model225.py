@@ -40,7 +40,7 @@ torch.manual_seed(0)
 np.random.seed(0)
 is_debug = False
 is_make_feature_factory = False
-load_pickle = False
+load_pickle = True
 epochs = 12
 device = torch.device("cuda")
 
@@ -418,10 +418,10 @@ def main(params: dict,
         df = feature_factory_manager.all_predict(df)
         def f(x):
             x = x // 1000
-            if x < -100:
-                return -100
-            if x > 400:
-                return 400
+            if x < -90:
+                return -90
+            if x > 90:
+                return 90
             return x
         df["task_container_id_bin300"] = [x if x < 300 else 300 for x in df["task_container_id"]]
         df["timediff-elapsedtime_bin500"] = [f(x) for x in df["timediff-elapsedtime"].values]
@@ -491,6 +491,7 @@ def main(params: dict,
         with open(f"../input/feature_engineering/model225/val.pickle", "rb") as f:
             dataset_val = pickle.load(f)
         print("loaded!")
+    1/0
     dataloader_train = DataLoader(dataset_train, batch_size=params["batch_size"], shuffle=True)
     dataloader_val = DataLoader(dataset_val, batch_size=params["batch_size"], shuffle=False)
 

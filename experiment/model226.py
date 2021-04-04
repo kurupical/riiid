@@ -430,10 +430,10 @@ def main(params: dict,
         df = feature_factory_manager.all_predict(df)
         def f(x):
             x = x // 1000
-            if x < -100:
-                return -100
-            if x > 400:
-                return 400
+            if x < -90:
+                return -90
+            if x > 90:
+                return 90
             return x
         df["task_container_id_bin300"] = [x if x < 300 else 300 for x in df["task_container_id"]]
         df["timediff-elapsedtime_bin500"] = [f(x) for x in df["timediff-elapsedtime"].values]

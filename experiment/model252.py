@@ -45,7 +45,7 @@ load_pickle = True
 if is_debug:
     epochs = 2
 else:
-    epochs = 10
+    epochs = 7
 device = torch.device("cuda")
 
 wait_time = 0
@@ -422,7 +422,7 @@ def train_epoch(model, train_iterator, val_iterator, optim, criterion, scheduler
             preds.extend(torch.nn.Sigmoid()(output[:, -1]).view(-1).data.cpu().numpy().tolist())
             labels.extend(label[:, -1].view(-1).data.cpu().numpy())
             i += 1
-            if i > 100 and epoch < 6:
+            if i > 100 and epoch < 7:
                 break
     auc_val = roc_auc_score(labels, preds)
 
